@@ -429,6 +429,7 @@ ol.board { list-style: none; margin: 0; padding: 0; }
 
 <div class="toast" id="toast" role="status"></div>
 
+<script src="core.js"></script>
 <script>
 /* =========================================================
    Storage
@@ -439,30 +440,52 @@ const LS = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 
-const START = 1500;
 let state = LS.get('sfn.state', null) || { tracks: {}, fights: 0, history: [] };
 state.removed ||= {};
-// resolved: group signature (sorted ids) -> {type: 'merged'|'distinct', ids, keepId, removedIds, ratingShift, at}
-function migrate(st) {
-  st.removed ||= {};
-  st.resolved ||= {};
-  for (const sig of Object.keys(st.notDupes || {})) st.resolved[sig] ||= { type: 'distinct', ids: sig.split(','), at: new Date().toISOString() };
-  delete st.notDupes;
-  // merges made before resolved groups existed: rebuild them from the removed list (pre-merge rating unknown)
-  const known = new Set(Object.values(st.resolved).flatMap(r => r.removedIds || []));
-  const byKeeper = {};
-  for (const r of Object.values(st.removed)) if (r.mergedInto && !known.has(r.id)) (byKeeper[r.mergedInto] ||= []).push(r);
-  for (const [keepId, rs] of Object.entries(byKeeper)) {
-    const ids = [keepId, ...rs.map(r => r.id)].sort();
-    st.resolved[ids.join(',')] = { type: 'merged', ids, keepId, removedIds: rs.map(r => r.id), ratingShift: 0, at: rs.map(r => r.removedAt).sort().pop() };
-  }
-  return st;
-}
 migrate(state);
 // tracks: id -> {id,name,artists,album,img,imgSm,rating,games,wins,losses,draws,added}
 // removed: id -> track snapshot + {removedAt, unliked}; kept out of the ranking and out of future imports
 const save = () => LS.set('sfn.state', state);
 const list = () => Object.values(state.tracks);
+
+// undo entries from before the action log were state snapshots; they can't be undone as actions
+state.history = (state.history || []).filter(h => h.opId);
+
+/* ---------- actions and the local side of sync ---------- */
+// syncMeta {uid, v}: whose cloud copy base is, and which version. null = not signed in.
+let syncMeta = LS.get('sfn.sync', null);
+let base = LS.get('sfn.base', null);
+let pending = LS.get('sfn.pending', []);
+let scheduleSync = () => {}; // replaced by the cloud code once it's loaded
+
+const op = (type, payload = {}) => ({ id: randomString(12), type, at: new Date().toISOString(), ...payload });
+
+function dispatch(o) {
+  const effect = applyOp(state, o);
+  if (syncMeta) { pending.push(o); LS.set('sfn.pending', pending); scheduleSync(); }
+  save();
+  return effect;
+}
+
+function saveSync() {
+  if (!syncMeta) { for (const k of ['sfn.sync', 'sfn.base', 'sfn.pending']) LS.del(k); return; }
+  LS.set('sfn.sync', syncMeta); LS.set('sfn.base', base); LS.set('sfn.pending', pending);
+}
+
+// state = base + pending, keeping this device's undo stack
+function rebuild() {
+  const history = state.history;
+  const r = replay(base, pending);
+  state = Object.assign(r.state, { history });
+  for (const h of history) if (h.type === 'fight' && r.effects[h.opId]) Object.assign(h, r.effects[h.opId]);
+  save();
+}
+
+function pushHistory(h) {
+  state.history.push(h);
+  if (state.history.length > 200) state.history.shift();
+  save();
+}
 
 /* =========================================================
    Spotify auth (PKCE)
@@ -566,7 +589,7 @@ async function syncLiked(statusId) {
     setStatus(statusId, `Loaded ${fetched.length} of ${page.total} liked songs…`);
     url = page.next;
   }
-  return merge(fetched, true);
+  return dispatch(op('import', { tracks: fetched, removeMissing: true }));
 }
 
 /* =========================================================
@@ -612,70 +635,36 @@ function importCSV(text) {
       isrc: iIsrc >= 0 ? r[iIsrc].trim() : '', released: iRel >= 0 ? r[iRel] : '',
     };
   }).filter(Boolean);
-  return merge(tracks, false);
-}
-
-function merge(incoming, removeMissing) {
-  const seen = new Set(); let added = 0, removed = 0;
-  for (const t of incoming) {
-    seen.add(t.id);
-    if (state.removed[t.id]) continue; // removed here but not unliked in Spotify yet
-    const old = state.tracks[t.id];
-    if (old) Object.assign(old, {
-      name: t.name, artists: t.artists, album: t.album, img: t.img || old.img, imgSm: t.imgSm || old.imgSm,
-      isrc: t.isrc || old.isrc || '', released: t.released || old.released || '',
-    });
-    else { state.tracks[t.id] = { ...t, rating: START, games: 0, wins: 0, losses: 0, draws: 0 }; added++; }
-  }
-  if (removeMissing) {
-    for (const id of Object.keys(state.tracks)) if (!seen.has(id)) { delete state.tracks[id]; removed++; }
-    for (const [id, r] of Object.entries(state.removed)) if (!seen.has(id)) r.unliked = true;
-  }
-  save();
-  return { added, removed, total: list().length };
+  return dispatch(op('import', { tracks, removeMissing: false }));
 }
 
 /* =========================================================
    Elo + matchmaking
    ========================================================= */
-const kFactor = s => s.games < 5 ? 48 : s.games < 15 ? 32 : 20;
-const expected = (ra, rb) => 1 / (1 + Math.pow(10, (rb - ra) / 400));
 
-function applyResult(a, b, scoreA) {
-  const snap = { a: { ...a }, b: { ...b } };
-  const ea = expected(a.rating, b.rating);
-  const da = kFactor(a) * (scoreA - ea);
-  const db = kFactor(b) * ((1 - scoreA) - (1 - ea));
-  a.rating += da; b.rating += db;
-  a.games++; b.games++;
-  if (scoreA === 1) { a.wins++; b.losses++; } else if (scoreA === 0) { b.wins++; a.losses++; } else { a.draws++; b.draws++; }
-  state.fights++;
-  state.history.push({ a: snap.a, b: snap.b });
-  if (state.history.length > 200) state.history.shift();
-  save();
-  return { da, db };
-}
 
 function undo() {
   const h = state.history.pop();
   if (!h) { toast('Nothing to undo'); return; }
-  if (h.removed) {
-    const { removedAt, unliked, mergedInto, ...t } = h.removed;
-    delete state.removed[t.id];
-    state.tracks[t.id] = t;
-    save();
-    current = h.pair;
+  const before = h.type === 'remove' ? state.removed[h.trackId] : null;
+  if (pending.some(o => o.id === h.opId)) {
+    // not uploaded yet: just forget the action
+    pending = pending.filter(o => o.id !== h.opId);
+    saveSync();
+    rebuild();
+  } else if (h.type === 'fight') dispatch(op('unfight', { a: h.a, b: h.b, score: h.score, da: h.da, db: h.db }));
+  else dispatch(op('restore', { trackId: h.trackId }));
+  save();
+  if (h.type === 'remove') {
+    current = h.pair.every(id => state.tracks[id]) ? h.pair : nextPair();
     renderFight();
-    if (unliked) relike([t.id], `Put "${t.name}" back and liked it again in Spotify`,
-      `Put "${t.name}" back in the ranking, but liking it again in Spotify failed. Like it there, or the next sync will remove it.`);
-    else toast(`Put "${t.name}" back`);
+    const name = before ? before.name : 'the song';
+    if (before?.unliked) relike([h.trackId], `Put "${name}" back and liked it again in Spotify`,
+      `Put "${name}" back in the ranking, but liking it again in Spotify failed. Like it there, or the next sync will remove it.`);
+    else toast(`Put "${name}" back`);
     return;
   }
-  if (state.tracks[h.a.id]) state.tracks[h.a.id] = h.a;
-  if (state.tracks[h.b.id]) state.tracks[h.b.id] = h.b;
-  state.fights = Math.max(0, state.fights - 1);
-  save();
-  current = [h.a.id, h.b.id];
+  current = state.tracks[h.a] && state.tracks[h.b] ? [h.a, h.b] : nextPair();
   renderFight();
   toast('Last fight undone');
 }
@@ -765,7 +754,7 @@ async function fetchCover(s) {
   try {
     const r = await fetch('https://open.spotify.com/oembed?url=spotify:track:' + encodeURIComponent(s.id));
     const url = (await r.json()).thumbnail_url;
-    if (url && state.tracks[s.id]) { state.tracks[s.id].img = state.tracks[s.id].imgSm = url; save(); }
+    if (url && state.tracks[s.id] && state.tracks[s.id].img !== url) dispatch(op('cover', { trackId: s.id, url }));
     return url;
   } catch { return null; }
 }
@@ -830,8 +819,9 @@ function setSound(on) {
 function decide(scoreA) {
   if (busy || !current) return;
   busy = true;
-  const a = state.tracks[current[0]], b = state.tracks[current[1]];
-  const { da, db } = applyResult(a, b, scoreA);
+  const o = op('fight', { a: current[0], b: current[1], score: scoreA });
+  const { da, db } = dispatch(o);
+  pushHistory({ opId: o.id, type: 'fight', a: o.a, b: o.b, score: scoreA, da, db });
   playPick(scoreA);
   const ca = $('corner-a'), cb = $('corner-b');
   const fmt = d => (d >= 0 ? '+' : '') + Math.round(d);
@@ -870,10 +860,7 @@ async function libraryRequest(method, ids, onBatch = () => {}) {
   return done;
 }
 
-const unlikeInSpotify = ids => libraryRequest('DELETE', ids, chunk => {
-  for (const id of chunk) if (state.removed[id]) state.removed[id].unliked = true;
-  save();
-});
+const unlikeInSpotify = ids => libraryRequest('DELETE', ids, chunk => dispatch(op('markUnliked', { trackIds: chunk })));
 
 // Songs coming back into the ranking were unliked when they left, so like them again;
 // otherwise the next sync would drop them. Reports the outcome in a toast.
@@ -928,11 +915,9 @@ async function removeSong(side) {
   if (busy || !current) return;
   const idx = side === 'a' ? 0 : 1;
   const t = state.tracks[current[idx]];
-  state.removed[t.id] = { ...t, removedAt: new Date().toISOString(), unliked: false };
-  delete state.tracks[t.id];
-  state.history.push({ removed: state.removed[t.id], pair: [...current] });
-  if (state.history.length > 200) state.history.shift();
-  save();
+  const o = op('remove', { trackId: t.id });
+  dispatch(o);
+  pushHistory({ opId: o.id, type: 'remove', trackId: t.id, pair: [...current] });
   if (list().length < 2) { show('fight'); return; }
   current = nextPair();
   renderFight();
@@ -963,21 +948,14 @@ function renderRemoved() {
     </li>`).join('');
 }
 
+
 function restoreSong(id) {
-  const { removedAt, unliked, mergedInto, ...t } = state.removed[id];
-  delete state.removed[id];
-  const keep = mergedInto && state.tracks[mergedInto];
-  if (keep) for (const k of ['wins', 'losses', 'draws', 'games']) keep[k] = Math.max(0, keep[k] - t[k]);
-  state.tracks[id] = t;
-  // once every merged-away version is back, the group is open again
-  for (const [sig, r] of Object.entries(state.resolved)) {
-    if ((r.type === 'merged' || r.type === 'removed') && r.removedIds.includes(id) && r.removedIds.every(x => !state.removed[x])) delete state.resolved[sig];
-  }
-  save();
+  const r = dispatch(op('restore', { trackId: id }));
   renderRemoved();
-  if (unliked) relike([id], `Put "${t.name}" back and liked it again in Spotify`,
-    `Put "${t.name}" back in the ranking, but liking it again in Spotify failed. Like it there, or the next sync will remove it.`);
-  else toast(`Put "${t.name}" back in the ranking`);
+  if (!r) return;
+  if (r.unliked) relike([id], `Put "${r.track.name}" back and liked it again in Spotify`,
+    `Put "${r.track.name}" back in the ranking, but liking it again in Spotify failed. Like it there, or the next sync will remove it.`);
+  else toast(`Put "${r.track.name}" back in the ranking`);
 }
 
 /* ---------- duplicates ---------- */
@@ -1113,10 +1091,10 @@ function renderDupes() {
   const covers = findCovers();
   // a "not duplicates" decision reopens when a new version joins the group
   const open = [...groups, ...similar, ...covers];
-  for (const [sig, r] of Object.entries(state.resolved)) {
-    if (r.type === 'distinct' && open.some(g => r.ids.every(id => g.sig.split(',').includes(id)))) delete state.resolved[sig];
-  }
-  save();
+  const reopened = Object.entries(state.resolved)
+    .filter(([, r]) => r.type === 'distinct' && open.some(g => r.ids.every(id => g.sig.split(',').includes(id))))
+    .map(([sig]) => sig);
+  if (reopened.length) dispatch(op('reopen', { sigs: reopened }));
   updateDupeCount();
   $('dupes-info').textContent = groups.length
     ? `${groups.length} songs are in your liked songs more than once. Choose the version to keep. It gains the other versions' wins, losses and draws, and its rating becomes their average, weighted by fights. The other versions go to the Removed songs list in Settings, to unlike in Spotify.`
@@ -1172,34 +1150,7 @@ function renderResolved() {
 }
 
 function unresolve(sig) {
-  const r = state.resolved[sig];
-  delete state.resolved[sig];
-  const relikeIds = [];
-  if (r.type === 'merged') {
-    const keep = state.tracks[r.keepId];
-    for (const id of r.removedIds) {
-      const gone = state.removed[id];
-      if (!gone || gone.mergedInto !== r.keepId) continue; // already put back from Settings
-      const { removedAt, unliked, mergedInto, ...t } = gone;
-      if (keep) for (const k of ['wins', 'losses', 'draws', 'games']) keep[k] = Math.max(0, keep[k] - t[k]);
-      if (unliked) relikeIds.push(id);
-      delete state.removed[id];
-      state.tracks[id] = t;
-    }
-    // undo the merge's rating change but keep whatever the song gained or lost in fights since
-    if (keep) keep.rating -= r.ratingShift || 0;
-  }
-  if (r.type === 'removed') {
-    for (const id of r.removedIds) {
-      const gone = state.removed[id];
-      if (!gone || gone.mergedInto) continue; // already put back, or merged elsewhere since
-      const { removedAt, unliked, mergedInto, ...t } = gone;
-      if (unliked) relikeIds.push(id);
-      delete state.removed[id];
-      state.tracks[id] = t;
-    }
-  }
-  save();
+  const { relikeIds } = dispatch(op('unresolve', { sig }));
   renderDupes();
   const n = relikeIds.length;
   relike(relikeIds, n ? `Unresolved, and liked ${n} version${n > 1 ? 's' : ''} again in Spotify` : 'Unresolved. The group is open again.',
@@ -1207,34 +1158,17 @@ function unresolve(sig) {
 }
 
 async function mergeDupes(sig, keepId, removeIds) {
-  const keep = state.tracks[keepId];
-  const ratingBefore = keep.rating;
-  const gone = removeIds.map(id => state.tracks[id]).filter(Boolean);
-  const games = keep.games + gone.reduce((n, s) => n + s.games, 0);
-  // fight-weighted average: a version with no fights doesn't drag the rating toward 1500
-  if (games > 0) keep.rating = (keep.rating * keep.games + gone.reduce((n, s) => n + s.rating * s.games, 0)) / games;
-  for (const s of gone) {
-    keep.wins += s.wins; keep.losses += s.losses; keep.draws += s.draws; keep.games += s.games;
-    state.removed[s.id] = { ...s, removedAt: new Date().toISOString(), unliked: false, mergedInto: keepId };
-    delete state.tracks[s.id];
-  }
-  state.resolved[sig] = { type: 'merged', ids: sig.split(','), keepId, removedIds: gone.map(s => s.id), ratingShift: keep.rating - ratingBefore, at: new Date().toISOString() };
-  if (current && current.some(id => !state.tracks[id])) current = null;
-  save();
-  if (await accessToken()) { try { await unlikeInSpotify(gone.map(s => s.id)); return true; } catch {} }
-  return false;
+  return resolveVersions(op('merge', { sig, keepId, removeIds }));
 }
-
 async function removeVersions(sig, keepId, removeIds) {
-  const gone = removeIds.map(id => state.tracks[id]).filter(Boolean);
-  for (const x of gone) {
-    state.removed[x.id] = { ...x, removedAt: new Date().toISOString(), unliked: false };
-    delete state.tracks[x.id];
-  }
-  state.resolved[sig] = { type: 'removed', ids: sig.split(','), keepId, removedIds: gone.map(x => x.id), at: new Date().toISOString() };
+  return resolveVersions(op('removeVersions', { sig, keepId, removeIds }));
+}
+// true when the removed versions were also unliked in Spotify
+async function resolveVersions(o) {
+  const r = dispatch(o);
   if (current && current.some(id => !state.tracks[id])) current = null;
-  save();
-  if (await accessToken()) { try { await unlikeInSpotify(gone.map(x => x.id)); return true; } catch {} }
+  if (!r || !r.removedIds.length) return false;
+  if (await accessToken()) { try { await unlikeInSpotify(r.removedIds); return true; } catch {} }
   return false;
 }
 
@@ -1318,7 +1252,7 @@ $('dupes-list').onclick = async e => {
   const g = e.target.closest('.group');
   if (act === 'unresolve') { unresolve(g.dataset.sig); return; }
   if (act === 'ignore') {
-    state.resolved[g.dataset.sig] = { type: 'distinct', ids: g.dataset.sig.split(','), at: new Date().toISOString() }; save();
+    dispatch(op('distinct', { sig: g.dataset.sig }));
     toast('Kept all versions');
   } else if (act === 'cover') {
     const keepId = g.querySelector('input:checked').value;
@@ -1368,14 +1302,14 @@ $('restore').onchange = $('restore-setup').onchange = async e => {
   try {
     const s = JSON.parse(await f.text());
     if (!s || typeof s.tracks !== 'object') throw 0;
-    state = migrate({ tracks: s.tracks, fights: s.fights || 0, history: s.history || [], removed: s.removed, resolved: s.resolved, notDupes: s.notDupes });
-    save(); current = null; toast('Backup restored'); show('ranks');
+    dispatch(op('replace', { state: { tracks: s.tracks, fights: s.fights || 0, removed: s.removed || {}, resolved: s.resolved || {}, notDupes: s.notDupes } }));
+    state.history = []; save(); current = null; toast('Backup restored'); show('ranks');
   } catch { toast('That file is not a Song Fight Night backup'); }
 };
 $('reset').onclick = () => {
   if (!confirm('Reset every rating to 1500 and clear fight history?')) return;
-  for (const s of list()) Object.assign(s, { rating: START, games: 0, wins: 0, losses: 0, draws: 0 });
-  state.fights = 0; state.history = []; save(); current = null; toast('Ratings reset'); show('fight');
+  dispatch(op('reset'));
+  state.history = []; save(); current = null; toast('Ratings reset'); show('fight');
 };
 $('wipe').onclick = () => {
   if (!confirm('Remove all songs, ratings and your Spotify login from this browser?')) return;
