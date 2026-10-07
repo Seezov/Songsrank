@@ -278,6 +278,15 @@ ol.board { list-style: none; margin: 0; padding: 0; }
         <input type="file" id="csv-file" accept=".csv,text/csv" class="hidden">
       </label>
     </div>
+
+    <div class="option">
+      <h3>Or restore a backup</h3>
+      <p>Already ranking on another device? Download a backup in its Settings, then load the file here.</p>
+      <label class="btn ghost" style="display:inline-block">
+        Restore backup
+        <input type="file" id="restore-setup" class="hidden">
+      </label>
+    </div>
   </section>
 
   <!-- fight -->
@@ -1285,7 +1294,7 @@ $('client-id-2').oninput = e => {
 };
 $('sync').onclick = async () => { $('sync').disabled = true; await runSync('sync-status'); $('sync').disabled = false; current = null; };
 $('backup').onclick = () => download('song-fight-backup.json', JSON.stringify(state), 'application/json');
-$('restore').onchange = async e => {
+$('restore').onchange = $('restore-setup').onchange = async e => {
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
   try {
