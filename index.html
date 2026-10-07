@@ -225,7 +225,9 @@ ol.board { list-style: none; margin: 0; padding: 0; }
   .corner .meta { grid-column: 2; font-size: 13px; gap: 8px; justify-content: flex-start; }
   .corner .player, .corner .foot { grid-column: 1 / -1; }
   .corner .player { margin-top: 10px; }
-  .corner .foot { justify-content: flex-end; margin-top: 2px; }
+  /* keep Remove away from the embed's Play button (right side): left corner, extra gap */
+  .corner .foot { justify-content: flex-start; margin-top: 12px; }
+  .remove { padding: 8px 0; }
   .delta { top: 14px; right: 14px; font-size: 24px; }
   .corner.won { transform: none; }
   .vs { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: stretch; }
@@ -252,7 +254,6 @@ ol.board { list-style: none; margin: 0; padding: 0; }
 /* touch screens: keyboard hints are noise */
 @media (hover: none) {
   .key { display: none; }
-  .foot { justify-content: flex-end; }
   .corner:hover { border-color: transparent; }
 }
 @media (prefers-reduced-motion: reduce) {
