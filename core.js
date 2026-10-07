@@ -149,9 +149,8 @@ function applyOp(st, op) {
       return { relikeIds };
     }
     case 'import': {
-      const seen = new Set(); let added = 0, removed = 0;
+      let added = 0, removed = 0;
       for (const t of op.tracks) {
-        seen.add(t.id);
         if (R[t.id]) continue; // removed here but not unliked in Spotify yet
         const old = T[t.id];
         if (old) Object.assign(old, {
@@ -160,10 +159,10 @@ function applyOp(st, op) {
         });
         else { T[t.id] = { ...t, rating: START, games: 0, wins: 0, losses: 0, draws: 0 }; added++; }
       }
-      if (op.removeMissing) {
-        for (const id of Object.keys(T)) if (!seen.has(id)) { delete T[id]; removed++; }
-        for (const [id, r] of Object.entries(R)) if (!seen.has(id)) r.unliked = true;
-      }
+      // a Spotify sync names what it drops when it is made, so replaying it later on another
+      // device's newer state never deletes songs liked (and fought) there in the meantime
+      for (const id of op.removeIds || []) if (T[id]) { delete T[id]; removed++; }
+      for (const id of op.unlikedIds || []) if (R[id]) R[id].unliked = true;
       return { added, removed, total: Object.keys(T).length };
     }
     case 'cover': {
@@ -198,7 +197,8 @@ function replay(base, ops) {
 function mergeRemote(remote, local) {
   if (!remote) return { next: shareable(local.state), write: true, v: 0 };
   if (remote.v === local.v) return { next: shareable(local.state), write: local.ops.length > 0, v: remote.v };
-  return { next: replay(remote.state, local.ops).state, write: local.ops.length > 0, v: remote.v };
+  const r = replay(remote.state, local.ops);
+  return { next: r.state, write: local.ops.length > 0, v: remote.v, effects: r.effects };
 }
 
 function firstSyncAction(remoteExists, localHasSongs) {
@@ -220,6 +220,8 @@ async function decodeState(bytes) {
 // One round trip with the cloud. store.transact(fn) runs fn(doc|null) atomically and writes the
 // doc fn returns, if any. dev = {meta: {v}, base, pending, state} is updated in place; actions
 // pushed to dev.pending while the transaction runs stay pending.
+// Returns {effects, replayedIds, remoteChanged}: an op in replayedIds with no entry in effects
+// was skipped on replay (its songs are gone), so undoing it must not reverse anything.
 async function syncOnce(store, dev) {
   const n = dev.pending.length;
   const local = { v: dev.meta.v, state: structuredClone(shareable(dev.state)), ops: dev.pending.slice(0, n) };
@@ -233,12 +235,14 @@ async function syncOnce(store, dev) {
     if (data.length > MAX_BYTES) throw new Error('TOO_BIG');
     return { v: res.v + 1, data, schema: SCHEMA };
   });
+  const remoteChanged = !!res.effects || (!!local.v && res.v !== local.v);
   dev.meta.v = res.write ? res.v + 1 : res.v;
   dev.base = res.next;
   dev.pending = dev.pending.slice(n);
   const r = replay(dev.base, dev.pending);
   dev.state = Object.assign(r.state, { history: dev.state.history });
-  return r.effects;
+  const replayedIds = [...(res.effects ? local.ops : []), ...dev.pending].map(o => o.id);
+  return { effects: { ...res.effects, ...r.effects }, replayedIds, remoteChanged };
 }
 
 if (typeof module !== 'undefined') module.exports = {

@@ -503,8 +503,8 @@ const op = (type, payload = {}) => ({ id: randomString(12), type, at: new Date()
 
 function dispatch(o) {
   const effect = applyOp(state, o);
-  if (syncMeta) { pending.push(o); LS.set('sfn.pending', pending); scheduleSync(); }
   save();
+  if (syncMeta) { pending.push(o); LS.set('sfn.pending', pending); scheduleSync(); }
   return effect;
 }
 
@@ -513,12 +513,22 @@ function saveSync() {
   LS.set('sfn.sync', syncMeta); LS.set('sfn.base', base); LS.set('sfn.pending', pending);
 }
 
+// After a replay: fights get their new rating deltas; a fight that was skipped (one of its songs
+// is gone on another device) is marked void so Undo doesn't reverse a fight that never counted.
+function applyReplayToHistory({ effects, replayedIds }) {
+  const replayed = new Set(replayedIds);
+  for (const h of state.history) {
+    if (h.type !== 'fight' || !replayed.has(h.opId)) continue;
+    if (effects[h.opId]) Object.assign(h, effects[h.opId]); else h.void = true;
+  }
+}
+
 // state = base + pending, keeping this device's undo stack
 function rebuild() {
   const history = state.history;
   const r = replay(base, pending);
   state = Object.assign(r.state, { history });
-  for (const h of history) if (h.type === 'fight' && r.effects[h.opId]) Object.assign(h, r.effects[h.opId]);
+  applyReplayToHistory({ effects: r.effects, replayedIds: pending.map(o => o.id) });
   save();
 }
 
@@ -630,7 +640,12 @@ async function syncLiked(statusId) {
     setStatus(statusId, `Loaded ${fetched.length} of ${page.total} liked songs…`);
     url = page.next;
   }
-  return dispatch(op('import', { tracks: fetched, removeMissing: true }));
+  const seen = new Set(fetched.map(t => t.id));
+  return dispatch(op('import', {
+    tracks: fetched,
+    removeIds: list().filter(t => !seen.has(t.id)).map(t => t.id), // unliked in Spotify since the last sync
+    unlikedIds: Object.keys(state.removed).filter(id => !seen.has(id)),
+  }));
 }
 
 /* =========================================================
@@ -676,7 +691,7 @@ function importCSV(text) {
       isrc: iIsrc >= 0 ? r[iIsrc].trim() : '', released: iRel >= 0 ? r[iRel] : '',
     };
   }).filter(Boolean);
-  return dispatch(op('import', { tracks, removeMissing: false }));
+  return dispatch(op('import', { tracks }));
 }
 
 /* =========================================================
@@ -687,6 +702,7 @@ function importCSV(text) {
 function undo() {
   const h = state.history.pop();
   if (!h) { toast('Nothing to undo'); return; }
+  if (h.void) { save(); toast("That fight no longer counts: one of its songs was removed on another device"); return; }
   const before = h.type === 'remove' ? state.removed[h.trackId] : null;
   if (!cloud.syncing && pending.some(o => o.id === h.opId)) {
     // not uploaded yet: just forget the action
@@ -957,7 +973,7 @@ async function playFull(side) {
    someone signs in. One Firestore document per Google account holds the gzipped state. */
 const FIREBASE_CONFIG = null; // set from the Firebase console (Project settings > Your apps)
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/12.19.0/';
-const cloud = { user: null, fs: null, auth: null, authM: null, db: null, ref: null, unwatch: null, timer: null, syncing: false, again: false, lastSync: 0, error: '' };
+const cloud = { gen: 0, user: null, fs: null, auth: null, authM: null, db: null, ref: null, unwatch: null, timer: null, syncing: false, again: false, lastSync: 0, error: '' };
 const deviceName = () => (navigator.userAgent.match(/Android|iPhone|iPad|Windows|Mac|Linux/) || ['Browser'])[0];
 
 async function loadCloud() {
@@ -999,18 +1015,21 @@ async function onUser(user) {
   }
   cloud.ref = cloud.fs.doc(cloud.db, 'users', user.uid);
   await syncNow();
+  if (cloud.user !== user || !syncMeta) return; // cancelled or signed out during the first sync
   cloud.unwatch = cloud.fs.onSnapshot(cloud.ref, onRemote, () => setCloudStatus('error', 'Lost the live connection to the cloud'));
   renderAccount();
 }
 
 // first sign-in on this device (or another account): decide whose data wins
 async function firstSync() {
+  const gen = cloud.gen;
   const snap = await cloud.fs.getDoc(cloud.ref);
   const d = snap.exists() ? snap.data() : null;
   if (d && d.schema > SCHEMA) throw new Error('SCHEMA');
   const remote = d && await decodeState(d.data.toUint8Array());
   let choice = firstSyncAction(!!d, list().length > 0);
   if (choice === 'ask') choice = await askWhichData(summary(remote), summary(state));
+  if (gen !== cloud.gen) return; // signed out meanwhile
   if (choice === 'cancel') { await signOutCloud(); return; }
   const uid = cloud.user.uid;
   if (choice === 'adopt') {
@@ -1033,7 +1052,19 @@ function askWhichData(cloudSum, localSum) {
   $('fs-local').textContent = fmt(localSum);
   d.returnValue = '';
   d.showModal();
-  return new Promise(res => { d.onclose = () => res(d.returnValue === 'adopt' || d.returnValue === 'upload' ? d.returnValue : 'cancel'); });
+  return new Promise(res => {
+    let done = false;
+    const finish = v => {
+      if (done) return;
+      done = true;
+      if (d.open) d.close();
+      res(v === 'adopt' || v === 'upload' ? v : 'cancel');
+    };
+    // the buttons answer directly; close/cancel (Esc) are fallbacks, as 'close' isn't always delivered
+    d.querySelector('form').onsubmit = e => { e.preventDefault(); finish(e.submitter?.value); };
+    d.oncancel = () => finish('cancel');
+    d.onclose = () => finish(d.returnValue);
+  });
 }
 
 async function syncNow() {
@@ -1045,11 +1076,14 @@ async function syncNow() {
   try {
     if (!syncMeta || syncMeta.uid !== cloud.user.uid) await firstSync();
     else {
-      const dev = { meta: syncMeta, base, pending, state };
-      const effects = await syncOnce(firestoreStore, dev);
+      const gen = cloud.gen;
+      const dev = { meta: { ...syncMeta }, base, pending, state };
+      const out = await syncOnce(firestoreStore, dev);
+      if (gen !== cloud.gen) { cloud.syncing = false; return; } // signed out (or wiped) meanwhile: drop the result
       ({ meta: syncMeta, base, pending, state } = dev);
-      for (const h of state.history) if (h.type === 'fight' && effects[h.opId]) Object.assign(h, effects[h.opId]);
-      save(); saveSync(); refreshAfterSync();
+      applyReplayToHistory(out);
+      save(); saveSync();
+      if (out.remoteChanged) refreshAfterSync(); // our own upload changes nothing on screen
     }
     if (cloud.user) { cloud.lastSync = Date.now(); setCloudStatus(pending.length ? 'syncing' : 'synced'); }
   } catch (e) {
@@ -1067,10 +1101,13 @@ async function onRemote(snap) {
   if (snap.metadata.hasPendingWrites || !snap.exists() || !syncMeta || cloud.syncing) return;
   const d = snap.data();
   if (d.v <= syncMeta.v) return;
+  if (d.schema > SCHEMA) { setCloudStatus('error', 'A newer version of this site wrote your data. Reload the page.'); return; }
   if (pending.length) { syncNow(); return; }
+  const gen = cloud.gen;
   let remote;
   try { remote = await decodeState(d.data.toUint8Array()); }
   catch { setCloudStatus('error', 'The cloud copy is unreadable. Nothing was changed here.'); return; }
+  if (gen !== cloud.gen || !syncMeta) return; // signed out while decoding
   if (pending.length || cloud.syncing || d.v <= syncMeta.v) { syncNow(); return; } // something happened while decoding
   syncMeta.v = d.v; base = remote;
   saveSync(); rebuild(); refreshAfterSync();
@@ -1087,6 +1124,7 @@ function refreshAfterSync() {
 
 async function signOutCloud() {
   if (pending.length && cloud.user && !cloud.syncing) await syncNow(); // best effort
+  cloud.gen++; // a sync still running now must not write its result back
   cloud.unwatch?.(); cloud.unwatch = null;
   syncMeta = null; base = null; pending = [];
   saveSync();
@@ -1305,6 +1343,11 @@ function renderDupes() {
     .map(([sig]) => sig);
   if (reopened.length) dispatch(op('reopen', { sigs: reopened }));
   updateDupeCount();
+  const chosen = {};
+  for (const g of $('dupes-list').querySelectorAll('.group[data-sig]')) {
+    const c = g.querySelector('input:checked');
+    if (c) chosen[g.dataset.sig] = c.value;
+  }
   $('dupes-info').textContent = groups.length
     ? `${groups.length} songs are in your liked songs more than once. Choose the version to keep. It gains the other versions' wins, losses and draws, and its rating becomes their average, weighted by fights. The other versions go to the Removed songs list in Settings, to unlike in Spotify.`
     : 'No duplicates found. Songs that share an ISRC, or the same artist and title once tags like "Remastered" or "Live" are ignored, show up here.';
@@ -1316,6 +1359,10 @@ function renderDupes() {
       <p class="lead">Usually covers, sometimes different songs that share a name. The oldest release is listed first. Removing a cover doesn't move its wins and losses to the song you keep, because they were fights about a different recording.</p>`
       + covers.map((g, i) => groupHTML(g, 'c' + i, 'cover')).join('') : '')
     + renderResolved();
+  for (const g of $('dupes-list').querySelectorAll('.group[data-sig]')) {
+    const input = chosen[g.dataset.sig] && [...g.querySelectorAll('input[type=radio]')].find(x => x.value === chosen[g.dataset.sig]);
+    if (input) input.checked = true;
+  }
   // CSV imports have no artwork: fill thumbnails for the first groups
   [...$('dupes-list').querySelectorAll('.version')].slice(0, 250).forEach(row => {
     const id = row.dataset.id;

@@ -92,10 +92,15 @@ test('remove on A + fight on B: the fight on the removed song is skipped', async
   const store = memoryStore({ v: 1, data: await encodeState(start), schema: SCHEMA });
   const A = device(start, 1), B = device(start, 1);
   act(A, op('remove', { trackId: 'a' }));
-  act(B, op('fight', { a: 'a', b: 'b', score: 1 }));
-  act(B, op('fight', { a: 'c', b: 'b', score: 1 }));
+  const B_first = op('fight', { a: 'a', b: 'b', score: 1 }), B_second = op('fight', { a: 'c', b: 'b', score: 1 });
+  act(B, B_first);
+  act(B, B_second);
   await syncOnce(store, A);
-  await syncOnce(store, B);
+  const out = await syncOnce(store, B);
+  assert.ok(out.replayedIds.includes(B_first.id));
+  assert.equal(out.effects[B_first.id], undefined); // skipped: undo must not reverse it
+  assert.ok(out.effects[B_second.id]);
+  assert.equal(out.remoteChanged, true);
   assert.equal(B.state.fights, 1);
   assert.equal(B.state.tracks.a, undefined);
   assert.equal(B.state.tracks.b.games, 1);
@@ -134,7 +139,8 @@ test('nothing to send and nothing new: no write', async () => {
   const store = memoryStore({ v: 4, data: await encodeState(start), schema: SCHEMA });
   const A = device(start, 4);
   A.state.history = [{ opId: 'x' }];
-  await syncOnce(store, A);
+  const out = await syncOnce(store, A);
+  assert.equal(out.remoteChanged, false);
   assert.equal(store.doc.v, 4);
   assert.deepEqual(A.state.history, [{ opId: 'x' }]);
 });
@@ -163,8 +169,23 @@ test('too large state is not written', async () => {
   const A = device(start, 1);
   // random text does not compress, so this is well over the limit
   const noise = Array.from({ length: 2000 }, (_, i) => Array.from({ length: 1000 }, () => String.fromCharCode(33 + Math.floor(Math.random() * 90))).join(''));
-  act(A, op('import', { tracks: noise.map((name, i) => ({ id: 'n' + i, name, artists: '', album: '' })), removeMissing: false }));
+  act(A, op('import', { tracks: noise.map((name, i) => ({ id: 'n' + i, name, artists: '', album: '' })) }));
   await assert.rejects(syncOnce(store, A), /TOO_BIG/);
   assert.equal(store.doc.v, 1);
   assert.equal(A.pending.length, 1);
+});
+
+test('own upload reports no remote change; effects of uploaded ops come from the replay on the newer cloud', async () => {
+  const start = fixture();
+  const store = memoryStore({ v: 1, data: await encodeState(start), schema: SCHEMA });
+  const A = device(start, 1), B = device(start, 1);
+  act(A, op('fight', { a: 'a', b: 'b', score: 1 }));
+  const mine = op('fight', { a: 'a', b: 'c', score: 1 });
+  const local = act(B, mine);
+  const up = await syncOnce(store, A);
+  assert.equal(up.remoteChanged, false);
+  const out = await syncOnce(store, B);
+  assert.ok(out.replayedIds.includes(mine.id));
+  assert.notDeepEqual(out.effects[mine.id], local); // a's rating moved first, so the replayed delta differs
+  assert.ok(Math.abs(out.effects[mine.id].da - (B.state.tracks.a.rating - (start.tracks.a.rating + 24))) < 1e-9);
 });

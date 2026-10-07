@@ -124,18 +124,29 @@ test('distinct and reopen', () => {
   assert.equal(s.resolved['a,b'], undefined);
 });
 
-test('import adds, updates, skips removed, and drops missing on a full sync', () => {
+test('import adds, updates, skips removed, and drops only the songs it names', () => {
   const s = fixture();
   applyOp(s, op('remove', { trackId: 'd' }));
+  applyOp(s, op('remove', { trackId: 'c' }));
   const e = applyOp(s, op('import', {
     tracks: [{ id: 'a', name: 'New name', artists: 'X', album: 'Al', img: 'i', imgSm: 'j' }, { id: 'e', name: 'E', artists: 'Y', album: '' }, { id: 'd', name: 'D', artists: '' }],
-    removeMissing: true,
+    removeIds: ['b'], unlikedIds: ['c'],
   }));
-  assert.deepEqual(e, { added: 1, removed: 2, total: 2 }); // b, c dropped
+  assert.deepEqual(e, { added: 1, removed: 1, total: 2 });
   assert.equal(s.tracks.a.name, 'New name');
   assert.equal(s.tracks.e.rating, START);
+  assert.equal(s.tracks.b, undefined);
   assert.equal(s.tracks.d, undefined);
-  assert.equal(s.removed.d.unliked, false); // still liked: d came back in the import
+  assert.equal(s.removed.c.unliked, true);
+  assert.equal(s.removed.d.unliked, false);
+});
+
+test('a stale Spotify import keeps songs another device added later', () => {
+  const s = fixture();
+  s.tracks.x = { ...s.tracks.a, id: 'x', games: 5 }; // liked and fought on another device after this import was made
+  applyOp(s, op('import', { tracks: [{ id: 'a', name: 'A', artists: '', album: '' }], removeIds: ['b'], unlikedIds: [] }));
+  assert.equal(s.tracks.x.games, 5);
+  assert.equal(s.tracks.b, undefined);
 });
 
 test('cover, reset, replace', () => {
