@@ -185,4 +185,63 @@ function applyOp(st, op) {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { START, SCHEMA, MAX_BYTES, kFactor, expected, migrate, shareable, applyOp };
+/* ---------- sync ---------- */
+function replay(base, ops) {
+  const state = structuredClone(shareable(base));
+  const effects = {};
+  for (const o of ops) { const e = applyOp(state, o); if (e) effects[o.id] = e; }
+  return { state, effects };
+}
+
+// remote: null (no document) or {v, state}; state is only needed when the cloud moved on.
+// local: {v: version our base came from, state: base + ops, ops: actions not uploaded yet}
+function mergeRemote(remote, local) {
+  if (!remote) return { next: shareable(local.state), write: true, v: 0 };
+  if (remote.v === local.v) return { next: shareable(local.state), write: local.ops.length > 0, v: remote.v };
+  return { next: replay(remote.state, local.ops).state, write: local.ops.length > 0, v: remote.v };
+}
+
+function firstSyncAction(remoteExists, localHasSongs) {
+  if (!remoteExists) return localHasSongs ? 'upload' : 'none';
+  return localHasSongs ? 'ask' : 'adopt';
+}
+
+const summary = st => ({ songs: Object.keys(st.tracks).length, fights: st.fights });
+
+async function encodeState(st) {
+  const stream = new Blob([JSON.stringify(shareable(st))]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function decodeState(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return migrate(JSON.parse(await new Response(stream).text()));
+}
+
+// One round trip with the cloud. store.transact(fn) runs fn(doc|null) atomically and writes the
+// doc fn returns, if any. dev = {meta: {v}, base, pending, state} is updated in place; actions
+// pushed to dev.pending while the transaction runs stay pending.
+async function syncOnce(store, dev) {
+  const n = dev.pending.length;
+  const local = { v: dev.meta.v, state: structuredClone(shareable(dev.state)), ops: dev.pending.slice(0, n) };
+  let res;
+  await store.transact(async doc => {
+    if (doc && doc.schema > SCHEMA) throw new Error('SCHEMA');
+    const remote = doc && { v: doc.v, state: doc.v === local.v ? null : await decodeState(doc.data) };
+    res = mergeRemote(remote, local);
+    if (!res.write) return null;
+    const data = await encodeState(res.next);
+    if (data.length > MAX_BYTES) throw new Error('TOO_BIG');
+    return { v: res.v + 1, data, schema: SCHEMA };
+  });
+  dev.meta.v = res.write ? res.v + 1 : res.v;
+  dev.base = res.next;
+  dev.pending = dev.pending.slice(n);
+  const r = replay(dev.base, dev.pending);
+  dev.state = Object.assign(r.state, { history: dev.state.history });
+  return r.effects;
+}
+
+if (typeof module !== 'undefined') module.exports = {
+  START, SCHEMA, MAX_BYTES, kFactor, expected, migrate, shareable, applyOp,
+  replay, mergeRemote, firstSyncAction, summary, encodeState, decodeState, syncOnce,
+};
