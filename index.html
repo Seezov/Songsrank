@@ -971,7 +971,15 @@ async function playFull(side) {
 /* ---------- cloud sync (Firebase) ----------
    See docs/superpowers/specs/2026-10-07-cross-device-sync-design.md. Firebase loads only once
    someone signs in. One Firestore document per Google account holds the gzipped state. */
-const FIREBASE_CONFIG = null; // set from the Firebase console (Project settings > Your apps)
+// public web config of the Firebase project "songsrank" (access is limited by Firestore rules)
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyCjFA78UviLOgZGybI5jMqNLewXV5P06oA',
+  authDomain: 'songsrank.firebaseapp.com',
+  projectId: 'songsrank',
+  storageBucket: 'songsrank.firebasestorage.app',
+  messagingSenderId: '40699384445',
+  appId: '1:40699384445:web:2afe9af05b9fd5646c9714',
+};
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/12.19.0/';
 const cloud = { gen: 0, user: null, fs: null, auth: null, authM: null, db: null, ref: null, unwatch: null, timer: null, syncing: false, again: false, lastSync: 0, error: '' };
 const deviceName = () => (navigator.userAgent.match(/Android|iPhone|iPad|Windows|Mac|Linux/) || ['Browser'])[0];
