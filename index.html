@@ -47,6 +47,17 @@ nav button {
 }
 nav button[aria-current="page"] { color: var(--text); background: var(--bg-2); }
 nav button:hover { color: var(--text); }
+.sync-ind { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.sync-ind[data-state="offline"], .sync-ind[data-state="error"] { color: var(--gold); }
+.dialog {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+  padding: 24px; max-width: 440px; width: calc(100% - 32px);
+}
+.dialog::backdrop { background: rgba(0, 0, 0, .6); }
+.dialog h3 { margin: 0 0 8px; font-size: 20px; }
+.dialog p { color: var(--muted); margin: 0 0 16px; }
+.dialog .btn { display: block; width: 100%; margin-top: 8px; text-align: left; }
+.dialog .btn span { font-weight: 400; opacity: .75; }
 
 main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .hidden { display: none !important; }
@@ -267,6 +278,7 @@ ol.board { list-style: none; margin: 0; padding: 0; }
 <body>
 <header>
   <h1 class="brand">Song <span>Fight</span> <span>Night</span></h1>
+  <span id="sync-ind" class="sync-ind hidden" role="status"></span>
   <nav id="nav" class="hidden">
     <button data-view="fight" aria-current="page">Fight</button>
     <button data-view="ranks">Rankings</button>
@@ -311,6 +323,12 @@ ol.board { list-style: none; margin: 0; padding: 0; }
         Restore backup
         <input type="file" id="restore-setup" class="hidden">
       </label>
+    </div>
+
+    <div class="option">
+      <h3>Already ranking on another device?</h3>
+      <p>Sign in with the same Google account to bring your songs and ratings here.</p>
+      <button class="btn" id="sign-in-setup">Sign in with Google</button>
     </div>
   </section>
 
@@ -382,6 +400,20 @@ ol.board { list-style: none; margin: 0; padding: 0; }
   <!-- settings -->
   <section id="view-settings" class="settings hidden">
     <h2>Settings</h2>
+    <div class="option" id="account">
+      <h3>Account</h3>
+      <div id="account-out">
+        <p>Sign in to keep your songs and ratings in sync on your phone and computer.</p>
+        <button class="btn" id="sign-in">Sign in with Google</button>
+      </div>
+      <div id="account-in" class="hidden">
+        <p>Signed in as <b id="account-email"></b>. <span id="account-status"></span></p>
+        <div class="row">
+          <button class="btn ghost" id="sync-now">Sync now</button>
+          <button class="btn ghost" id="sign-out">Sign out</button>
+        </div>
+      </div>
+    </div>
     <div class="option">
       <h3>Sync liked songs</h3>
       <p id="sync-info">Adds songs you've liked since the last sync and removes ones you've unliked. Ratings are kept.</p>
@@ -427,6 +459,15 @@ ol.board { list-style: none; margin: 0; padding: 0; }
   </section>
 </main>
 
+<dialog id="first-sync" class="dialog">
+  <form method="dialog">
+    <h3>Which ratings should this account keep?</h3>
+    <p>Your account already has songs in the cloud, and this device has its own. Pick one; the other is replaced on every device.</p>
+    <button class="btn" value="adopt">Keep the cloud data <span id="fs-cloud"></span></button>
+    <button class="btn ghost" value="upload">Use this device's data <span id="fs-local"></span></button>
+    <button class="btn ghost" value="cancel">Cancel and sign out</button>
+  </form>
+</dialog>
 <div class="toast" id="toast" role="status"></div>
 
 <script src="core.js"></script>
@@ -647,7 +688,7 @@ function undo() {
   const h = state.history.pop();
   if (!h) { toast('Nothing to undo'); return; }
   const before = h.type === 'remove' ? state.removed[h.trackId] : null;
-  if (pending.some(o => o.id === h.opId)) {
+  if (!cloud.syncing && pending.some(o => o.id === h.opId)) {
     // not uploaded yet: just forget the action
     pending = pending.filter(o => o.id !== h.opId);
     saveSync();
@@ -723,7 +764,7 @@ function show(v) {
   if (v === 'ranks') renderBoard();
   if (v === 'dupes') renderDupes();
   updateDupeCount();
-  if (v === 'settings') { $('client-id-2').value = LS.get('sfn.clientId', ''); $('sync').disabled = !LS.get('sfn.clientId', ''); renderRemoved(); }
+  if (v === 'settings') { $('client-id-2').value = LS.get('sfn.clientId', ''); $('sync').disabled = !LS.get('sfn.clientId', ''); renderRemoved(); renderAccount(); }
 }
 
 // Spotify cover URLs encode their size: 00004851 = 64px, 00001e02 = 300px, 0000b273 = 640px
@@ -910,6 +951,174 @@ async function playFull(side) {
     openInApp(id);
   }
 }
+
+/* ---------- cloud sync (Firebase) ----------
+   See docs/superpowers/specs/2026-10-07-cross-device-sync-design.md. Firebase loads only once
+   someone signs in. One Firestore document per Google account holds the gzipped state. */
+const FIREBASE_CONFIG = null; // set from the Firebase console (Project settings > Your apps)
+const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/12.19.0/';
+const cloud = { user: null, fs: null, auth: null, authM: null, db: null, ref: null, unwatch: null, timer: null, syncing: false, again: false, lastSync: 0, error: '' };
+const deviceName = () => (navigator.userAgent.match(/Android|iPhone|iPad|Windows|Mac|Linux/) || ['Browser'])[0];
+
+async function loadCloud() {
+  if (cloud.fs) return;
+  const [appM, authM, fs] = await Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(f => import(FIREBASE_SDK + f)));
+  const app = appM.initializeApp(FIREBASE_CONFIG);
+  Object.assign(cloud, { authM, fs, auth: authM.getAuth(app), db: fs.getFirestore(app) });
+  authM.onAuthStateChanged(cloud.auth, onUser);
+}
+
+// the Firestore document behind syncOnce (core.js)
+const firestoreStore = {
+  transact: fn => cloud.fs.runTransaction(cloud.db, async tx => {
+    const snap = await tx.get(cloud.ref);
+    const d = snap.exists() ? snap.data() : null;
+    const w = await fn(d && { v: d.v, schema: d.schema, data: d.data.toUint8Array() });
+    if (w) tx.set(cloud.ref, { ...w, data: cloud.fs.Bytes.fromUint8Array(w.data), updatedAt: cloud.fs.serverTimestamp(), device: deviceName() });
+  }),
+};
+
+async function signIn() {
+  try {
+    await loadCloud();
+    await cloud.authM.signInWithPopup(cloud.auth, new cloud.authM.GoogleAuthProvider());
+  } catch (e) {
+    if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+    toast(e.code === 'auth/popup-blocked' ? 'The sign-in window was blocked. Allow pop-ups for this site and try again.'
+      : 'Sign-in failed: ' + (e.code || e.message));
+  }
+}
+
+async function onUser(user) {
+  cloud.unwatch?.(); cloud.unwatch = null;
+  cloud.user = user;
+  if (!user) {
+    // syncMeta still set means the session ended without Sign out: keep queueing, ask to sign in
+    if (syncMeta) setCloudStatus('error', 'Signed out. Sign in again to keep syncing.'); else setCloudStatus('off');
+    return;
+  }
+  cloud.ref = cloud.fs.doc(cloud.db, 'users', user.uid);
+  await syncNow();
+  cloud.unwatch = cloud.fs.onSnapshot(cloud.ref, onRemote, () => setCloudStatus('error', 'Lost the live connection to the cloud'));
+  renderAccount();
+}
+
+// first sign-in on this device (or another account): decide whose data wins
+async function firstSync() {
+  const snap = await cloud.fs.getDoc(cloud.ref);
+  const d = snap.exists() ? snap.data() : null;
+  if (d && d.schema > SCHEMA) throw new Error('SCHEMA');
+  const remote = d && await decodeState(d.data.toUint8Array());
+  let choice = firstSyncAction(!!d, list().length > 0);
+  if (choice === 'ask') choice = await askWhichData(summary(remote), summary(state));
+  if (choice === 'cancel') { await signOutCloud(); return; }
+  const uid = cloud.user.uid;
+  if (choice === 'adopt') {
+    syncMeta = { uid, v: d.v }; base = remote; pending = []; state.history = [];
+  } else if (choice === 'upload') {
+    // cloud copy (or nothing) as the base, plus one action that swaps in this device's data
+    syncMeta = { uid, v: d ? d.v : 0 }; base = remote || { tracks: {}, fights: 0, removed: {}, resolved: {} };
+    pending = [op('replace', { state: structuredClone(shareable(state)) })];
+  } else {
+    syncMeta = { uid, v: 0 }; base = structuredClone(shareable(state)); pending = [];
+  }
+  saveSync(); rebuild(); refreshAfterSync();
+  if (pending.length) cloud.again = true; // upload right after this sync round
+}
+
+function askWhichData(cloudSum, localSum) {
+  const d = $('first-sync');
+  const fmt = s => `(${s.songs} songs, ${s.fights} fights)`;
+  $('fs-cloud').textContent = fmt(cloudSum);
+  $('fs-local').textContent = fmt(localSum);
+  d.returnValue = '';
+  d.showModal();
+  return new Promise(res => { d.onclose = () => res(d.returnValue === 'adopt' || d.returnValue === 'upload' ? d.returnValue : 'cancel'); });
+}
+
+async function syncNow() {
+  if (!cloud.user) return;
+  if (cloud.syncing) { cloud.again = true; return; }
+  cloud.syncing = true;
+  clearTimeout(cloud.timer);
+  setCloudStatus('syncing');
+  try {
+    if (!syncMeta || syncMeta.uid !== cloud.user.uid) await firstSync();
+    else {
+      const dev = { meta: syncMeta, base, pending, state };
+      const effects = await syncOnce(firestoreStore, dev);
+      ({ meta: syncMeta, base, pending, state } = dev);
+      for (const h of state.history) if (h.type === 'fight' && effects[h.opId]) Object.assign(h, effects[h.opId]);
+      save(); saveSync(); refreshAfterSync();
+    }
+    if (cloud.user) { cloud.lastSync = Date.now(); setCloudStatus(pending.length ? 'syncing' : 'synced'); }
+  } catch (e) {
+    if (e.message === 'TOO_BIG') setCloudStatus('error', 'Your data is too large to sync. It is still saved on this device.');
+    else if (e.message === 'SCHEMA') setCloudStatus('error', 'A newer version of this site wrote your data. Reload the page.');
+    else if (e instanceof SyntaxError || /gzip|incorrect header|decompress/i.test(e.message)) setCloudStatus('error', 'The cloud copy is unreadable. Nothing was changed here.');
+    else setCloudStatus(navigator.onLine ? 'error' : 'offline', e.code || e.message);
+  }
+  cloud.syncing = false;
+  if (cloud.again) { cloud.again = false; syncNow(); }
+}
+
+// another device wrote a newer version
+async function onRemote(snap) {
+  if (snap.metadata.hasPendingWrites || !snap.exists() || !syncMeta || cloud.syncing) return;
+  const d = snap.data();
+  if (d.v <= syncMeta.v) return;
+  if (pending.length) { syncNow(); return; }
+  let remote;
+  try { remote = await decodeState(d.data.toUint8Array()); }
+  catch { setCloudStatus('error', 'The cloud copy is unreadable. Nothing was changed here.'); return; }
+  if (pending.length || cloud.syncing || d.v <= syncMeta.v) { syncNow(); return; } // something happened while decoding
+  syncMeta.v = d.v; base = remote;
+  saveSync(); rebuild(); refreshAfterSync();
+  cloud.lastSync = Date.now(); setCloudStatus('synced');
+}
+
+// redraw whatever is on screen with the new state
+function refreshAfterSync() {
+  if (busy) { setTimeout(refreshAfterSync, 300); return; }
+  if (current && current.some(id => !state.tracks[id])) current = null;
+  if (view === 'fight' && current && list().length >= 2) renderFight();
+  else show(view);
+}
+
+async function signOutCloud() {
+  if (pending.length && cloud.user && !cloud.syncing) await syncNow(); // best effort
+  cloud.unwatch?.(); cloud.unwatch = null;
+  syncMeta = null; base = null; pending = [];
+  saveSync();
+  if (cloud.auth) await cloud.authM.signOut(cloud.auth); // onUser(null) sets the status
+  else setCloudStatus('off');
+}
+
+function setCloudStatus(status, message = '') {
+  cloud.error = status === 'error' || status === 'offline' ? message : '';
+  const el = $('sync-ind');
+  el.dataset.state = status;
+  el.textContent = { off: '', syncing: 'Syncing…', synced: 'Synced', offline: `Offline · ${pending.length} pending`, error: 'Sync error' }[status];
+  el.title = message || el.textContent;
+  el.classList.toggle('hidden', status === 'off');
+  renderAccount();
+}
+
+function renderAccount() {
+  const u = cloud.user;
+  $('account-out').classList.toggle('hidden', !!u);
+  $('account-in').classList.toggle('hidden', !u);
+  if (!u) return;
+  $('account-email').textContent = u.email;
+  $('account-status').textContent = cloud.error || (cloud.lastSync ? 'Last synced at ' + new Date(cloud.lastSync).toLocaleTimeString() + '.' : '');
+}
+
+scheduleSync = () => {
+  if (!cloud.user) return;
+  setCloudStatus('syncing');
+  clearTimeout(cloud.timer);
+  cloud.timer = setTimeout(syncNow, 5000);
+};
 
 async function removeSong(side) {
   if (busy || !current) return;
@@ -1280,6 +1489,15 @@ $('unlike-all').onclick = async () => {
   renderRemoved();
 };
 $('skip').onclick = skip;
+$('sign-in').onclick = $('sign-in-setup').onclick = signIn;
+$('sign-out').onclick = () => signOutCloud();
+$('sync-now').onclick = () => syncNow();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' || pending.length) syncNow();
+});
+addEventListener('online', () => { if (syncMeta && !cloud.fs) loadCloud().catch(() => {}); else syncNow(); });
+addEventListener('offline', () => { if (cloud.user) setCloudStatus('offline'); });
+setInterval(() => { if (pending.length && document.visibilityState === 'visible') syncNow(); }, 60000);
 document.querySelectorAll('.full').forEach(b => b.onclick = () => playFull(b.dataset.side));
 $('undo').onclick = undo;
 $('sound').onclick = () => setSound(!soundOn);
@@ -1302,17 +1520,20 @@ $('restore').onchange = $('restore-setup').onchange = async e => {
   try {
     const s = JSON.parse(await f.text());
     if (!s || typeof s.tracks !== 'object') throw 0;
+    if (syncMeta && !confirm('This replaces your songs and ratings on all your signed-in devices. Continue?')) return;
     dispatch(op('replace', { state: { tracks: s.tracks, fights: s.fights || 0, removed: s.removed || {}, resolved: s.resolved || {}, notDupes: s.notDupes } }));
     state.history = []; save(); current = null; toast('Backup restored'); show('ranks');
   } catch { toast('That file is not a Song Fight Night backup'); }
 };
 $('reset').onclick = () => {
-  if (!confirm('Reset every rating to 1500 and clear fight history?')) return;
+  if (!confirm(syncMeta ? 'Reset every rating to 1500 on all your signed-in devices?' : 'Reset every rating to 1500 and clear fight history?')) return;
   dispatch(op('reset'));
   state.history = []; save(); current = null; toast('Ratings reset'); show('fight');
 };
-$('wipe').onclick = () => {
-  if (!confirm('Remove all songs, ratings and your Spotify login from this browser?')) return;
+$('wipe').onclick = async () => {
+  if (!confirm(syncMeta ? 'Remove all songs, ratings and your Spotify login from this browser? You will be signed out; your cloud copy stays.'
+    : 'Remove all songs, ratings and your Spotify login from this browser?')) return;
+  if (syncMeta) await signOutCloud();
   state = { tracks: {}, fights: 0, history: [], removed: {}, resolved: {} }; save(); LS.del('sfn.token'); current = null; show('fight');
 };
 
@@ -1334,6 +1555,7 @@ document.addEventListener('keydown', e => {
   try { justLoggedIn = await handleRedirect(); }
   catch (e) { setStatus('setup-status', 'Login failed: ' + e.message); }
   show('fight');
+  if (syncMeta) { setCloudStatus('syncing'); loadCloud().catch(() => setCloudStatus('offline')); }
   const loginFor = sessionStorage.getItem('sfn.loginFor'); sessionStorage.removeItem('sfn.loginFor');
   if (justLoggedIn && loginFor === 'play') { toast('Spotify connected. Tap Full song again to play.'); return; }
   if (justLoggedIn) {
