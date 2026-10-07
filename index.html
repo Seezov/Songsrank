@@ -909,17 +909,15 @@ async function playFull(side) {
   const t = LS.get('sfn.token', null);
   if (!t || !(t.scope || '').split(' ').includes(PLAY_SCOPE)) { login('play'); return; }
   try {
-    const body = { uris: ['spotify:track:' + id] };
-    let r = await player('PUT', '/play', body);
-    if (r.status === 404) {
-      // no active device: wake the most likely one (this phone's Spotify app, if it's been opened lately)
-      const { devices = [] } = await (await player('GET', '/devices')).json();
-      const d = devices.find(x => x.type === 'Smartphone') || devices[0];
-      if (d) r = await player('PUT', '/play?device_id=' + encodeURIComponent(d.id), body);
-    }
-    if (r.ok) { toast('Playing in Spotify'); return; }
+    // target the phone explicitly: without a device_id Spotify plays on whatever was active last (often the PC)
+    const { devices = [] } = await (await player('GET', '/devices')).json();
+    const phones = devices.filter(d => d.type === 'Smartphone' && !d.is_restricted);
+    const d = phones.find(x => x.is_active) || phones[0];
+    if (!d) { toast('Open the Spotify app once, then tap Full song again'); openInApp(id); return; }
+    const r = await player('PUT', '/play?device_id=' + encodeURIComponent(d.id), { uris: ['spotify:track:' + id] });
+    if (r.ok) { toast(`Playing on ${d.name}`); return; }
     if (r.status === 403) { toast('Spotify only lets Premium accounts start playback'); return; }
-    openInApp(id); // no device to play on: open the song in the app
+    openInApp(id);
   } catch (e) {
     if (e.message === 'NOAUTH') { login('play'); return; }
     openInApp(id);
