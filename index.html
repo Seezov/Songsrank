@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Song Fight Night</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #1E1A24;
+  --bg-2: #2A2432;
+  --line: #3D3547;
+  --text: #F3EEF6;
+  --muted: #A197AD;
+  --red: #E5484D;
+  --blue: #4C82F7;
+  --gold: #F5B83D;
+  --display: "Anton", Impact, sans-serif;
+  --body: "Bricolage Grotesque", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 var(--body);
+  min-height: 100vh;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+a { color: var(--gold); }
+
+/* ---------- header ---------- */
+header {
+  display: flex; align-items: center; gap: 24px;
+  padding: 14px 24px; border-bottom: 1px solid var(--line);
+}
+.brand { font: 26px/1 var(--display); letter-spacing: .01em; margin: 0; }
+.brand span { color: var(--red); }
+.brand span + span { color: var(--blue); }
+nav { display: flex; gap: 4px; margin-left: auto; }
+nav button {
+  background: none; border: 0; padding: 8px 14px; border-radius: 8px; color: var(--muted); font-weight: 600;
+}
+nav button[aria-current="page"] { color: var(--text); background: var(--bg-2); }
+nav button:hover { color: var(--text); }
+
+main { padding: 24px; max-width: 1180px; margin: 0 auto; }
+.hidden { display: none !important; }
+
+/* ---------- setup ---------- */
+.setup { max-width: 640px; margin: 40px auto; }
+.setup h2 { font: 56px/1 var(--display); margin: 0 0 12px; }
+.setup > p { color: var(--muted); margin: 0 0 32px; font-size: 18px; }
+.option { border: 1px solid var(--line); border-radius: 14px; padding: 24px; margin-bottom: 16px; background: var(--bg-2); }
+.option h3 { margin: 0 0 8px; font-size: 20px; }
+.option p, .option li { color: var(--muted); margin: 0 0 12px; }
+.option ol { padding-left: 20px; margin: 0 0 16px; }
+.option code { background: var(--bg); padding: 2px 6px; border-radius: 4px; color: var(--text); word-break: break-all; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row input { flex: 1 1 240px; min-width: 0; }
+input[type=text], input[type=search] {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+}
+.btn {
+  border: 0; border-radius: 10px; padding: 10px 18px; font-weight: 800; background: var(--text); color: var(--bg);
+}
+.btn.ghost { background: none; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+.status { color: var(--gold); min-height: 1.5em; margin-top: 12px; }
+
+/* ---------- fight ---------- */
+.ring {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: stretch;
+}
+.corner {
+  position: relative; border-radius: 18px; padding: 16px; background: var(--bg-2);
+  border: 2px solid transparent; display: flex; flex-direction: column; gap: 14px;
+  transition: transform .18s ease, opacity .25s ease, border-color .18s ease;
+}
+.corner.red { --c: var(--red); }
+.corner.blue { --c: var(--blue); }
+.corner::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 6px; border-radius: 18px 18px 0 0; background: var(--c);
+}
+.pick {
+  all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 14px; border-radius: 12px;
+}
+.pick:focus-visible { outline: 3px solid var(--gold); outline-offset: 4px; }
+.corner:hover { border-color: var(--c); }
+.cover {
+  width: 100%; aspect-ratio: 1; border-radius: 10px; object-fit: cover; background: var(--bg); display: block;
+}
+.title {
+  font: 34px/1.05 var(--display); margin: 0; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.artist { color: var(--muted); margin: 0; font-weight: 600; }
+.meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 14px; }
+.meta b { color: var(--text); font-weight: 600; }
+.corner iframe { width: 100%; height: 80px; border: 0; border-radius: 12px; display: block; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: auto; }
+.remove {
+  background: none; border: 0; padding: 4px 0; color: var(--muted); font-size: 13px; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.remove:hover { color: var(--red); }
+.board.removed { margin-top: 16px; }
+.board.removed li { grid-template-columns: 40px 1fr auto auto; }
+.board.removed img { width: 40px; height: 40px; }
+.board.removed a.open { color: var(--muted); font-size: 14px; white-space: nowrap; }
+.board.removed .done { color: var(--muted); font-size: 14px; }
+.key { font-size: 13px; color: var(--muted); }
+.key kbd {
+  font: 600 12px var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--text);
+}
+
+.vs {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+}
+.vs strong {
+  font: 88px/1 var(--display);
+  background: linear-gradient(180deg, var(--red) 50%, var(--blue) 50%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.vs .btn.ghost { width: 100%; white-space: nowrap; }
+
+.corner.won { border-color: var(--c); transform: scale(1.02); }
+.corner.lost { opacity: .35; }
+.delta {
+  position: absolute; top: 18px; right: 18px; font: 32px/1 var(--display); padding: 6px 12px; border-radius: 10px;
+  background: var(--c); color: #fff; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s;
+}
+.corner.won .delta, .corner.lost .delta, .corner.drew .delta { opacity: 1; transform: none; }
+.corner.lost .delta { background: var(--bg); color: var(--muted); }
+
+.progress {
+  margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px 28px; align-items: baseline; color: var(--muted);
+}
+.progress b { color: var(--text); font: 28px/1 var(--display); margin-right: 6px; letter-spacing: .02em; }
+.bar { flex: 1 1 100%; height: 6px; background: var(--bg-2); border-radius: 3px; overflow: hidden; }
+.dist { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.dist span { background: var(--bg-2); border-radius: 8px; padding: 4px 10px; font-size: 14px; }
+.progress .dist b { color: var(--text); font: 600 14px var(--body); margin-right: 2px; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--red), var(--blue)); width: 0; transition: width .4s; }
+
+/* ---------- rankings ---------- */
+.ranks-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
+.ranks-head h2 { font: 44px/1 var(--display); margin: 0 auto 0 0; }
+.ranks-head input { width: 260px; max-width: 100%; }
+ol.board { list-style: none; margin: 0; padding: 0; }
+.board li {
+  display: grid; grid-template-columns: 64px 48px 1fr auto auto; gap: 16px; align-items: center;
+  padding: 10px 12px; border-radius: 12px;
+}
+.board li:nth-child(odd) { background: var(--bg-2); }
+.board .pos { font: 30px/1 var(--display); color: var(--muted); text-align: right; }
+.board li.top .pos { color: var(--gold); }
+.board img { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--bg); }
+.board .name { min-width: 0; }
+.board .name a { color: var(--text); text-decoration: none; font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .name a:hover { text-decoration: underline; }
+.board .name span { color: var(--muted); font-size: 14px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .rec { color: var(--muted); font-size: 14px; text-align: right; white-space: nowrap; }
+.board .elo { font: 24px/1 var(--display); min-width: 64px; text-align: right; }
+.board li.new .elo, .board li.new .name a { color: var(--muted); }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+/* ---------- settings ---------- */
+.settings { max-width: 640px; }
+.settings h2 { font: 44px/1 var(--display); margin: 0 0 20px; }
+.danger { color: var(--red); border-color: var(--red); }
+
+#dupe-count:not(:empty) {
+  display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px;
+  background: var(--gold); color: var(--bg); font-size: 12px; line-height: 20px; text-align: center;
+}
+.lead { color: var(--muted); margin: -8px 0 24px; max-width: 70ch; }
+.group { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; background: var(--bg-2); }
+.group h3 { margin: 0 0 12px; font-size: 18px; }
+.group h3 span { color: var(--muted); font-weight: 400; }
+.version {
+  display: grid; grid-template-columns: auto 48px 1fr auto auto; gap: 14px; align-items: center;
+  padding: 10px; border-radius: 10px; cursor: pointer; border: 2px solid transparent;
+}
+.version:has(input:checked) { border-color: var(--gold); background: var(--bg); }
+.version input { accent-color: var(--gold); width: 18px; height: 18px; margin: 0; }
+.version img { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--bg); }
+.version .name { min-width: 0; }
+.version .name b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.version .name span { display: block; color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.version .rec { color: var(--muted); font-size: 14px; text-align: right; white-space: nowrap; }
+.version .elo { font: 24px/1 var(--display); min-width: 56px; text-align: right; }
+.version a { color: var(--muted); font-size: 13px; }
+.group .row { margin-top: 12px; }
+.resolved-head { font: 32px/1 var(--display); margin: 40px 0 16px; }
+.resolved-head span { color: var(--muted); }
+.group.resolved { background: none; }
+.group.resolved .version { cursor: default; }
+.group .verdict { color: var(--muted); margin: -6px 0 8px; font-size: 14px; }
+.tag { font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.tag.kept { color: var(--gold); border-color: var(--gold); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+  padding: 10px 18px; border-radius: 10px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 760px) {
+  header { padding: 12px 16px; gap: 12px; flex-wrap: wrap; }
+  main { padding: 16px; }
+  .ring { grid-template-columns: 1fr; gap: 12px; }
+  .corner { display: grid; grid-template-columns: 96px 1fr; gap: 12px; }
+  .pick { display: contents; }
+  .cover { grid-row: span 3; }
+  .title { font-size: 24px; }
+  .corner iframe, .corner .foot { grid-column: 1 / -1; }
+  .board.removed li { grid-template-columns: 40px 1fr auto; }
+  .version { grid-template-columns: auto 40px 1fr auto; gap: 10px; }
+  .version img { width: 40px; height: 40px; }
+  .version .rec { display: none; }
+  .board.removed .done { display: none; }
+  .corner .meta { grid-column: 2; }
+  .vs { flex-direction: row; gap: 12px; }
+  .vs strong { font-size: 48px; }
+  .vs .btn.ghost { width: auto; }
+  .board li { grid-template-columns: 40px 40px 1fr auto; gap: 10px; }
+  .board img { width: 40px; height: 40px; }
+  .board .rec { display: none; }
+  .board .pos { font-size: 22px; }
+  .setup h2 { font-size: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="brand">Song <span>Fight</span> <span>Night</span></h1>
+  <nav id="nav" class="hidden">
+    <button data-view="fight" aria-current="page">Fight</button>
+    <button data-view="ranks">Rankings</button>
+    <button data-view="dupes">Duplicates <span id="dupe-count"></span></button>
+    <button data-view="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+  <!-- setup -->
+  <section id="view-setup" class="setup hidden">
+    <h2>Rank your liked songs</h2>
+    <p>You'll see two songs at a time. Pick the one you like more, and each song's Elo rating updates after every fight.</p>
+
+    <div class="option">
+      <h3>Connect Spotify</h3>
+      <ol>
+        <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify developer dashboard</a> and create an app. Tick "Web API".</li>
+        <li>Add this redirect URI to the app: <code id="redirect-uri"></code></li>
+        <li>Copy the app's Client ID and paste it below.</li>
+      </ol>
+      <div class="row">
+        <input type="text" id="client-id" placeholder="Client ID" autocomplete="off" spellcheck="false" aria-label="Spotify Client ID">
+        <button class="btn" id="connect">Connect Spotify</button>
+      </div>
+      <div class="status" id="setup-status" role="status"></div>
+    </div>
+
+    <div class="option">
+      <h3>Or import a CSV</h3>
+      <p>Export your liked songs with <a href="https://exportify.net" target="_blank" rel="noopener">Exportify</a>, then load the file here. No developer app needed, but new likes won't sync automatically.</p>
+      <label class="btn ghost" style="display:inline-block">
+        Choose CSV file
+        <input type="file" id="csv-file" accept=".csv,text/csv" class="hidden">
+      </label>
+    </div>
+  </section>
+
+  <!-- fight -->
+  <section id="view-fight" class="hidden">
+    <div class="ring">
+      <article class="corner red" id="corner-a">
+        <button class="pick" data-side="a" aria-label="Pick left song">
+          <img class="cover" alt="">
+          <p class="title"></p>
+          <p class="artist"></p>
+        </button>
+        <div class="meta"><span>Rating <b class="r"></b></span><span class="rec"></span></div>
+        <div class="player"></div>
+        <div class="foot"><span class="key"><kbd>←</kbd> or <kbd>A</kbd> to pick</span><button class="remove" data-side="a">Remove from liked</button></div>
+        <div class="delta"></div>
+      </article>
+
+      <div class="vs">
+        <strong aria-hidden="true">VS</strong>
+        <button class="btn ghost" id="draw" title="Down arrow or S">Can't decide</button>
+        <button class="btn ghost" id="skip" title="Up arrow or W">Skip</button>
+        <button class="btn ghost" id="undo" title="Z or Backspace">Undo</button>
+        <button class="btn ghost" id="sound" title="M" aria-pressed="true">Sound on</button>
+      </div>
+
+      <article class="corner blue" id="corner-b">
+        <button class="pick" data-side="b" aria-label="Pick right song">
+          <img class="cover" alt="">
+          <p class="title"></p>
+          <p class="artist"></p>
+        </button>
+        <div class="meta"><span>Rating <b class="r"></b></span><span class="rec"></span></div>
+        <div class="player"></div>
+        <div class="foot"><span class="key"><kbd>→</kbd> or <kbd>D</kbd> to pick</span><button class="remove" data-side="b">Remove from liked</button></div>
+        <div class="delta"></div>
+      </article>
+    </div>
+
+    <div class="progress">
+      <span><b id="p-fights">0</b>fights</span>
+      <span><b id="p-songs">0</b>songs</span>
+      <span><b id="p-avg">0</b>fights per song on average</span>
+      <span id="p-hint"></span>
+      <div class="bar"><i id="p-bar"></i></div>
+      <div class="dist" id="p-dist" aria-label="Songs by number of fights"></div>
+    </div>
+  </section>
+
+  <!-- rankings -->
+  <section id="view-ranks" class="hidden">
+    <div class="ranks-head">
+      <h2>Rankings</h2>
+      <input type="search" id="search" placeholder="Search songs or artists" aria-label="Search rankings">
+      <button class="btn ghost" id="export">Export CSV</button>
+    </div>
+    <ol class="board" id="board"></ol>
+  </section>
+
+  <!-- duplicates -->
+  <section id="view-dupes" class="hidden">
+    <div class="ranks-head">
+      <h2>Duplicates</h2>
+    </div>
+    <p class="lead" id="dupes-info"></p>
+    <div id="dupes-list"></div>
+  </section>
+
+  <!-- settings -->
+  <section id="view-settings" class="settings hidden">
+    <h2>Settings</h2>
+    <div class="option">
+      <h3>Sync liked songs</h3>
+      <p id="sync-info">Adds songs you've liked since the last sync and removes ones you've unliked. Ratings are kept.</p>
+      <div class="row">
+        <input type="text" id="client-id-2" placeholder="Client ID" autocomplete="off" spellcheck="false" aria-label="Spotify Client ID">
+        <button class="btn" id="sync">Sync with Spotify</button>
+      </div>
+      <div class="status" id="sync-status" role="status"></div>
+    </div>
+    <div class="option">
+      <h3>Import CSV</h3>
+      <p>Merge an Exportify CSV into your current ranking.</p>
+      <label class="btn ghost" style="display:inline-block">
+        Choose CSV file
+        <input type="file" id="csv-file-2" accept=".csv,text/csv" class="hidden">
+      </label>
+    </div>
+    <div class="option">
+      <h3>Removed songs</h3>
+      <p id="removed-info"></p>
+      <div class="row" id="removed-actions">
+        <button class="btn" id="unlike-all">Unlike all in Spotify</button>
+      </div>
+      <div class="status" id="removed-status" role="status"></div>
+      <ol class="board removed" id="removed-list"></ol>
+    </div>
+    <div class="option">
+      <h3>Back up progress</h3>
+      <p>Your ratings live in this browser only. Save a backup file to move them or keep them safe.</p>
+      <div class="row">
+        <button class="btn ghost" id="backup">Download backup</button>
+        <label class="btn ghost">Restore backup<input type="file" id="restore" accept=".json" class="hidden"></label>
+      </div>
+    </div>
+    <div class="option">
+      <h3>Start over</h3>
+      <p>Resets every rating to 1500 and clears fight history. Your song list stays.</p>
+      <div class="row">
+        <button class="btn ghost danger" id="reset">Reset ratings</button>
+        <button class="btn ghost danger" id="wipe">Remove all data</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* =========================================================
+   Storage
+   ========================================================= */
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('Could not save: browser storage is full or blocked'); } },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+const START = 1500;
+let state = LS.get('sfn.state', null) || { tracks: {}, fights: 0, history: [] };
+state.removed ||= {};
+// resolved: group signature (sorted ids) -> {type: 'merged'|'distinct', ids, keepId, removedIds, ratingShift, at}
+function migrate(st) {
+  st.removed ||= {};
+  st.resolved ||= {};
+  for (const sig of Object.keys(st.notDupes || {})) st.resolved[sig] ||= { type: 'distinct', ids: sig.split(','), at: new Date().toISOString() };
+  delete st.notDupes;
+  // merges made before resolved groups existed: rebuild them from the removed list (pre-merge rating unknown)
+  const known = new Set(Object.values(st.resolved).flatMap(r => r.removedIds || []));
+  const byKeeper = {};
+  for (const r of Object.values(st.removed)) if (r.mergedInto && !known.has(r.id)) (byKeeper[r.mergedInto] ||= []).push(r);
+  for (const [keepId, rs] of Object.entries(byKeeper)) {
+    const ids = [keepId, ...rs.map(r => r.id)].sort();
+    st.resolved[ids.join(',')] = { type: 'merged', ids, keepId, removedIds: rs.map(r => r.id), ratingShift: 0, at: rs.map(r => r.removedAt).sort().pop() };
+  }
+  return st;
+}
+migrate(state);
+// tracks: id -> {id,name,artists,album,img,imgSm,rating,games,wins,losses,draws,added}
+// removed: id -> track snapshot + {removedAt, unliked}; kept out of the ranking and out of future imports
+const save = () => LS.set('sfn.state', state);
+const list = () => Object.values(state.tracks);
+
+/* =========================================================
+   Spotify auth (PKCE)
+   ========================================================= */
+const REDIRECT = location.origin + location.pathname;
+const SCOPES = 'user-library-read user-library-modify';
+
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function randomString(n = 64) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const a = crypto.getRandomValues(new Uint8Array(n));
+  return Array.from(a, x => chars[x % chars.length]).join('');
+}
+
+async function login() {
+  const clientId = document.getElementById('client-id').value.trim() || LS.get('sfn.clientId', '');
+  if (!clientId) { setStatus('setup-status', 'Paste your Client ID first.'); return; }
+  LS.set('sfn.clientId', clientId);
+  const verifier = randomString(64);
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  const st = randomString(16);
+  sessionStorage.setItem('sfn.verifier', verifier);
+  sessionStorage.setItem('sfn.oauthState', st);
+  const p = new URLSearchParams({
+    client_id: clientId, response_type: 'code', redirect_uri: REDIRECT, scope: SCOPES,
+    code_challenge_method: 'S256', code_challenge: challenge, state: st,
+  });
+  location.href = 'https://accounts.spotify.com/authorize?' + p;
+}
+
+async function tokenRequest(body) {
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error_description || j.error || 'Token request failed');
+  LS.set('sfn.token', {
+    access: j.access_token,
+    refresh: j.refresh_token || LS.get('sfn.token', {}).refresh,
+    exp: Date.now() + (j.expires_in - 60) * 1000,
+  });
+}
+
+async function handleRedirect() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('code') && !q.has('error')) return false;
+  history.replaceState(null, '', REDIRECT);
+  if (q.get('error')) { setStatus('setup-status', 'Spotify login was cancelled: ' + q.get('error')); return false; }
+  if (q.get('state') !== sessionStorage.getItem('sfn.oauthState')) { setStatus('setup-status', 'Login check failed. Try connecting again.'); return false; }
+  await tokenRequest({
+    grant_type: 'authorization_code', code: q.get('code'), redirect_uri: REDIRECT,
+    client_id: LS.get('sfn.clientId', ''), code_verifier: sessionStorage.getItem('sfn.verifier'),
+  });
+  return true;
+}
+
+async function accessToken() {
+  const t = LS.get('sfn.token', null);
+  if (!t) return null;
+  if (Date.now() < t.exp) return t.access;
+  if (!t.refresh) return null;
+  try {
+    await tokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh, client_id: LS.get('sfn.clientId', '') });
+    return LS.get('sfn.token').access;
+  } catch { LS.del('sfn.token'); return null; }
+}
+
+async function api(url) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tok = await accessToken();
+    if (!tok) throw new Error('NOAUTH');
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + tok } });
+    if (r.status === 429) { await sleep((+r.headers.get('Retry-After') || 2) * 1000); continue; }
+    if (r.status === 401) { LS.del('sfn.token'); throw new Error('NOAUTH'); }
+    if (!r.ok) throw new Error('Spotify returned ' + r.status);
+    return r.json();
+  }
+  throw new Error('Spotify is rate limiting requests. Try again in a minute.');
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function syncLiked(statusId) {
+  const fetched = [];
+  let url = 'https://api.spotify.com/v1/me/tracks?limit=50';
+  while (url) {
+    const page = await api(url);
+    for (const it of page.items) {
+      const t = it.track;
+      if (!t || !t.id) continue; // local files / unavailable
+      const imgs = t.album?.images || [];
+      fetched.push({
+        id: t.id, name: t.name, artists: t.artists.map(a => a.name).join(', '), album: t.album?.name || '',
+        img: (imgs[1] || imgs[0])?.url || '', imgSm: (imgs[2] || imgs[1] || imgs[0])?.url || '', added: it.added_at,
+        isrc: t.external_ids?.isrc || '', released: t.album?.release_date || '',
+      });
+    }
+    setStatus(statusId, `Loaded ${fetched.length} of ${page.total} liked songs…`);
+    url = page.next;
+  }
+  return merge(fetched, true);
+}
+
+/* =========================================================
+   CSV import (Exportify format, flexible headers)
+   ========================================================= */
+function parseCSV(text) {
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(f); rows.push(row); row = []; f = '';
+    } else f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim()));
+}
+
+function importCSV(text) {
+  const rows = parseCSV(text.replace(/^﻿/, ''));
+  const head = rows.shift().map(h => h.trim().toLowerCase());
+  // names in priority order: an earlier, more specific name wins over a looser later one
+  const col = (...names) => { for (const n of names) { const i = head.findIndex(h => h.includes(n)); if (i >= 0) return i; } return -1; };
+  const iUri = col('track uri', 'uri', 'spotify id', 'track id');
+  const iName = col('track name', 'name');
+  const iArt = col('artist');
+  const iAlb = col('album name', 'album');
+  const iImg = col('image');
+  const iAdd = col('added at', 'added');
+  const iIsrc = col('isrc');
+  const iRel = col('release date');
+  if (iUri < 0 || iName < 0) throw new Error('This CSV has no "Track URI" and "Track Name" columns. Export it from Exportify.');
+  const tracks = rows.map(r => {
+    const id = (r[iUri] || '').trim().split(':').pop().split('/').pop().split('?')[0];
+    return id && {
+      id, name: r[iName], artists: iArt >= 0 ? r[iArt].replace(/\\,/g, ',') : '', album: iAlb >= 0 ? r[iAlb] : '',
+      img: iImg >= 0 ? r[iImg] : '', imgSm: iImg >= 0 ? r[iImg] : '', added: iAdd >= 0 ? r[iAdd] : '',
+      isrc: iIsrc >= 0 ? r[iIsrc].trim() : '', released: iRel >= 0 ? r[iRel] : '',
+    };
+  }).filter(Boolean);
+  return merge(tracks, false);
+}
+
+function merge(incoming, removeMissing) {
+  const seen = new Set(); let added = 0, removed = 0;
+  for (const t of incoming) {
+    seen.add(t.id);
+    if (state.removed[t.id]) continue; // removed here but not unliked in Spotify yet
+    const old = state.tracks[t.id];
+    if (old) Object.assign(old, {
+      name: t.name, artists: t.artists, album: t.album, img: t.img || old.img, imgSm: t.imgSm || old.imgSm,
+      isrc: t.isrc || old.isrc || '', released: t.released || old.released || '',
+    });
+    else { state.tracks[t.id] = { ...t, rating: START, games: 0, wins: 0, losses: 0, draws: 0 }; added++; }
+  }
+  if (removeMissing) {
+    for (const id of Object.keys(state.tracks)) if (!seen.has(id)) { delete state.tracks[id]; removed++; }
+    for (const [id, r] of Object.entries(state.removed)) if (!seen.has(id)) r.unliked = true;
+  }
+  save();
+  return { added, removed, total: list().length };
+}
+
+/* =========================================================
+   Elo + matchmaking
+   ========================================================= */
+const kFactor = s => s.games < 5 ? 48 : s.games < 15 ? 32 : 20;
+const expected = (ra, rb) => 1 / (1 + Math.pow(10, (rb - ra) / 400));
+
+function applyResult(a, b, scoreA) {
+  const snap = { a: { ...a }, b: { ...b } };
+  const ea = expected(a.rating, b.rating);
+  const da = kFactor(a) * (scoreA - ea);
+  const db = kFactor(b) * ((1 - scoreA) - (1 - ea));
+  a.rating += da; b.rating += db;
+  a.games++; b.games++;
+  if (scoreA === 1) { a.wins++; b.losses++; } else if (scoreA === 0) { b.wins++; a.losses++; } else { a.draws++; b.draws++; }
+  state.fights++;
+  state.history.push({ a: snap.a, b: snap.b });
+  if (state.history.length > 200) state.history.shift();
+  save();
+  return { da, db };
+}
+
+function undo() {
+  const h = state.history.pop();
+  if (!h) { toast('Nothing to undo'); return; }
+  if (h.removed) {
+    const { removedAt, unliked, mergedInto, ...t } = h.removed;
+    delete state.removed[t.id];
+    state.tracks[t.id] = t;
+    save();
+    current = h.pair;
+    renderFight();
+    if (unliked) relike([t.id], `Put "${t.name}" back and liked it again in Spotify`,
+      `Put "${t.name}" back in the ranking, but liking it again in Spotify failed. Like it there, or the next sync will remove it.`);
+    else toast(`Put "${t.name}" back`);
+    return;
+  }
+  if (state.tracks[h.a.id]) state.tracks[h.a.id] = h.a;
+  if (state.tracks[h.b.id]) state.tracks[h.b.id] = h.b;
+  state.fights = Math.max(0, state.fights - 1);
+  save();
+  current = [h.a.id, h.b.id];
+  renderFight();
+  toast('Last fight undone');
+}
+
+const recentPairs = [];
+const pairKey = (x, y) => x < y ? x + '|' + y : y + '|' + x;
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+function nextPair() {
+  const all = list();
+  if (all.length < 2) return null;
+  // Tournament-style: both songs come from the least-fought tier, so fight counts stay even.
+  const minGames = Math.min(...all.map(s => s.games));
+  const a = pick(all.filter(s => s.games === minGames));
+  // B: widen the tier only as far as needed to find a fresh opponent
+  const fresh = s => s.id !== a.id && !recentPairs.includes(pairKey(a.id, s.id));
+  let pool = [];
+  for (const slack of [0, 1, 2, Infinity]) {
+    pool = all.filter(s => s.games <= minGames + slack && fresh(s));
+    if (pool.length >= 3 || slack === Infinity) break;
+  }
+  if (!pool.length) pool = all.filter(s => s.id !== a.id);
+  // within the tier, prefer a close rating (the most informative fight), with some randomness
+  let b;
+  if (a.games === 0 || Math.random() < 0.15) b = pick(pool);
+  else {
+    pool.sort((x, y) => Math.abs(x.rating - a.rating) - Math.abs(y.rating - a.rating));
+    b = pick(pool.slice(0, Math.max(3, Math.min(12, Math.ceil(pool.length * 0.05)))));
+  }
+  recentPairs.push(pairKey(a.id, b.id));
+  if (recentPairs.length > 40) recentPairs.shift();
+  return Math.random() < 0.5 ? [a.id, b.id] : [b.id, a.id];
+}
+
+/* =========================================================
+   UI
+   ========================================================= */
+const $ = id => document.getElementById(id);
+let current = null, busy = false, view = 'fight';
+
+function setStatus(id, msg) { $(id).textContent = msg; }
+let toastTimer;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function show(v) {
+  view = v;
+  const hasSongs = list().length >= 2;
+  $('nav').classList.toggle('hidden', !hasSongs);
+  for (const s of ['setup', 'fight', 'ranks', 'dupes', 'settings']) $('view-' + s).classList.toggle('hidden', s !== (hasSongs ? v : 'setup'));
+  document.querySelectorAll('nav button').forEach(b => b.dataset.view === v ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
+  if (!hasSongs) return;
+  if (v === 'fight') { if (!current || !state.tracks[current[0]] || !state.tracks[current[1]]) current = nextPair(); renderFight(); }
+  if (v === 'ranks') renderBoard();
+  if (v === 'dupes') renderDupes();
+  updateDupeCount();
+  if (v === 'settings') { $('client-id-2').value = LS.get('sfn.clientId', ''); $('sync').disabled = !LS.get('sfn.clientId', ''); renderRemoved(); }
+}
+
+// Spotify cover URLs encode their size: 00004851 = 64px, 00001e02 = 300px, 0000b273 = 640px
+const bigCover = url => url ? url.replace(/ab67616d0000(4851|1e02)/, 'ab67616d0000b273') : url;
+
+const rec = s => `${s.wins}–${s.losses}${s.draws ? '–' + s.draws : ''}`;
+
+function fillCorner(el, s) {
+  el.classList.remove('won', 'lost', 'drew');
+  const img = el.querySelector('.cover');
+  img.src = bigCover(s.img) || ''; img.alt = s.album ? `${s.album} cover` : '';
+  img.style.visibility = s.img ? 'visible' : 'hidden';
+  if (!s.img) fetchCover(s).then(url => { if (url && el.querySelector('.player').dataset.id === s.id) { img.src = bigCover(url); img.style.visibility = 'visible'; } });
+  el.querySelector('.title').textContent = s.name;
+  el.querySelector('.artist').textContent = s.artists;
+  el.querySelector('.r').textContent = Math.round(s.rating);
+  el.querySelector('.rec').textContent = s.games ? rec(s) : 'First fight';
+  const player = el.querySelector('.player');
+  if (player.dataset.id !== s.id) {
+    player.dataset.id = s.id;
+    player.innerHTML = `<iframe src="https://open.spotify.com/embed/track/${encodeURIComponent(s.id)}?theme=0" loading="lazy"
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" title="Play ${escapeAttr(s.name)}"></iframe>`;
+  }
+}
+
+// CSV imports have no artwork; Spotify's public oEmbed endpoint provides it without login
+async function fetchCover(s) {
+  try {
+    const r = await fetch('https://open.spotify.com/oembed?url=spotify:track:' + encodeURIComponent(s.id));
+    const url = (await r.json()).thumbnail_url;
+    if (url && state.tracks[s.id]) { state.tracks[s.id].img = state.tracks[s.id].imgSm = url; save(); }
+    return url;
+  } catch { return null; }
+}
+
+function renderFight() {
+  if (!current) return;
+  fillCorner($('corner-a'), state.tracks[current[0]]);
+  fillCorner($('corner-b'), state.tracks[current[1]]);
+  const all = list();
+  const avg = all.length ? (2 * state.fights) / all.length : 0;
+  $('p-fights').textContent = state.fights;
+  $('p-songs').textContent = all.length;
+  $('p-avg').textContent = avg.toFixed(1);
+  const target = 10;
+  $('p-bar').style.width = Math.min(100, avg / target * 100) + '%';
+  $('p-hint').textContent = avg < 3 ? 'The ranking is still rough. Keep going.'
+    : avg < target ? `Around ${target} fights per song gives a solid ranking.`
+    : 'Your ranking is solid now. More fights keep refining the top.';
+  // how many songs have 0, 1, 2… fights (10 and above grouped)
+  const counts = new Map();
+  for (const x of all) { const k = Math.min(x.games, 10); counts.set(k, (counts.get(k) || 0) + 1); }
+  const label = k => k === 0 ? 'no fights' : k === 10 ? '10+ fights' : k === 1 ? '1 fight' : `${k} fights`;
+  $('p-dist').innerHTML = [...counts.keys()].sort((x, y) => x - y)
+    .map(k => `<span><b>${counts.get(k)}</b> ${label(k)}</span>`).join('');
+}
+
+/* ---------- pick sounds (synthesised, no files) ---------- */
+let soundOn = LS.get('sfn.sound', true), audio = null;
+// red corner: lower, warmer; blue corner: higher, brighter; draw: one soft blip
+const SOUNDS = {
+  1: { wave: 'triangle', notes: [392, 523.25] },   // G4 -> C5
+  0: { wave: 'sine', notes: [659.25, 987.77] },    // E5 -> B5
+  0.5: { wave: 'sine', notes: [440] },             // A4
+};
+function playPick(scoreA) {
+  if (!soundOn) return;
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const { wave, notes } = SOUNDS[scoreA];
+    notes.forEach((f, i) => {
+      const t = audio.currentTime + i * 0.07;
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = wave;
+      osc.frequency.value = f;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.18, t + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(t);
+      osc.stop(t + 0.25);
+    });
+  } catch { /* no audio support: picking still works */ }
+}
+function setSound(on) {
+  soundOn = on;
+  LS.set('sfn.sound', on);
+  $('sound').textContent = on ? 'Sound on' : 'Sound off';
+  $('sound').setAttribute('aria-pressed', String(on));
+}
+
+function decide(scoreA) {
+  if (busy || !current) return;
+  busy = true;
+  const a = state.tracks[current[0]], b = state.tracks[current[1]];
+  const { da, db } = applyResult(a, b, scoreA);
+  playPick(scoreA);
+  const ca = $('corner-a'), cb = $('corner-b');
+  const fmt = d => (d >= 0 ? '+' : '') + Math.round(d);
+  ca.querySelector('.delta').textContent = fmt(da);
+  cb.querySelector('.delta').textContent = fmt(db);
+  if (scoreA === 1) { ca.classList.add('won'); cb.classList.add('lost'); }
+  else if (scoreA === 0) { cb.classList.add('won'); ca.classList.add('lost'); }
+  else { ca.classList.add('drew'); cb.classList.add('drew'); }
+  const delay = matchMedia('(prefers-reduced-motion: reduce)').matches ? 150 : 650;
+  setTimeout(() => { current = nextPair(); renderFight(); busy = false; }, delay);
+}
+
+/* ---------- removing songs ---------- */
+// Spotify's generic library endpoint (Feb 2026): DELETE unlikes, PUT likes. It rejects 50 URIs with
+// "Too many uris requested" and doesn't document the cap, so start at 40 and halve whenever it says that.
+// onBatch runs after each accepted batch, so a failure part-way keeps the progress.
+async function libraryRequest(method, ids, onBatch = () => {}) {
+  let size = 40, done = 0;
+  for (let i = 0; i < ids.length;) {
+    const chunk = ids.slice(i, i + size);
+    const uris = chunk.map(id => 'spotify:track:' + id).join(',');
+    const tok = await accessToken();
+    if (!tok) throw new Error('NOAUTH');
+    const r = await fetch('https://api.spotify.com/v1/me/library?uris=' + encodeURIComponent(uris), {
+      method, headers: { Authorization: 'Bearer ' + tok },
+    });
+    if (r.status === 401 || r.status === 403) throw new Error('NOAUTH');
+    if (r.status === 429) { await sleep((+r.headers.get('Retry-After') || 2) * 1000); continue; }
+    if (r.status === 400 && size > 1 && /too many/i.test(await r.text())) { size = Math.ceil(size / 2); continue; }
+    const verb = method === 'PUT' ? 'liking' : 'unliking';
+    if (!r.ok) throw new Error(`Spotify returned ${r.status} while ${verb}. ${done} songs were done before that.`);
+    onBatch(chunk);
+    done += chunk.length;
+    i += chunk.length;
+  }
+  return done;
+}
+
+const unlikeInSpotify = ids => libraryRequest('DELETE', ids, chunk => {
+  for (const id of chunk) if (state.removed[id]) state.removed[id].unliked = true;
+  save();
+});
+
+// Songs coming back into the ranking were unliked when they left, so like them again;
+// otherwise the next sync would drop them. Reports the outcome in a toast.
+async function relike(ids, okMsg, failMsg) {
+  if (!ids.length) { toast(okMsg); return; }
+  try {
+    if (!(await accessToken())) throw new Error('NOAUTH');
+    await libraryRequest('PUT', ids);
+    toast(okMsg);
+  } catch { toast(failMsg); }
+}
+
+async function removeSong(side) {
+  if (busy || !current) return;
+  const idx = side === 'a' ? 0 : 1;
+  const t = state.tracks[current[idx]];
+  state.removed[t.id] = { ...t, removedAt: new Date().toISOString(), unliked: false };
+  delete state.tracks[t.id];
+  state.history.push({ removed: state.removed[t.id], pair: [...current] });
+  if (state.history.length > 200) state.history.shift();
+  save();
+  if (list().length < 2) { show('fight'); return; }
+  current = nextPair();
+  renderFight();
+  if (await accessToken()) {
+    try { await unlikeInSpotify([t.id]); toast(`Removed "${t.name}" and unliked it in Spotify. Press Z to undo.`); return; }
+    catch { /* falls through: stays in the to-unlike list */ }
+  }
+  toast(`Removed "${t.name}" from the ranking. Press Z to undo.`);
+}
+
+function renderRemoved() {
+  const all = Object.values(state.removed).sort((x, y) => y.removedAt.localeCompare(x.removedAt));
+  const pending = all.filter(r => !r.unliked);
+  $('removed-info').textContent = !all.length
+    ? 'Songs you remove during fights show up here. They stay out of the ranking, even if you import a new CSV.'
+    : pending.length
+      ? `${pending.length} of ${all.length} still need unliking in Spotify. Open each one and tap the ✓, or unlike them all at once after you connect Spotify.`
+      : `All ${all.length} removed songs are unliked in Spotify.`;
+  $('removed-actions').classList.toggle('hidden', !pending.length);
+  $('unlike-all').disabled = !LS.get('sfn.clientId', '');
+  $('unlike-all').title = $('unlike-all').disabled ? 'Connect Spotify first (Settings needs a Client ID)' : '';
+  $('removed-list').innerHTML = all.map(r => `
+    <li>
+      ${r.imgSm ? `<img src="${escapeAttr(r.imgSm)}" alt="" loading="lazy">` : '<img alt="">'}
+      <div class="name"><a href="https://open.spotify.com/track/${encodeURIComponent(r.id)}" target="_blank" rel="noopener">${escapeHTML(r.name)}</a><span>${escapeHTML(r.artists)}</span></div>
+      <span class="done">${r.unliked ? 'Unliked' : 'Still liked in Spotify'}</span>
+      <button class="btn ghost" data-restore="${escapeAttr(r.id)}">Restore</button>
+    </li>`).join('');
+}
+
+function restoreSong(id) {
+  const { removedAt, unliked, mergedInto, ...t } = state.removed[id];
+  delete state.removed[id];
+  const keep = mergedInto && state.tracks[mergedInto];
+  if (keep) for (const k of ['wins', 'losses', 'draws', 'games']) keep[k] = Math.max(0, keep[k] - t[k]);
+  state.tracks[id] = t;
+  // once every merged-away version is back, the group is open again
+  for (const [sig, r] of Object.entries(state.resolved)) {
+    if ((r.type === 'merged' || r.type === 'removed') && r.removedIds.includes(id) && r.removedIds.every(x => !state.removed[x])) delete state.resolved[sig];
+  }
+  save();
+  renderRemoved();
+  if (unliked) relike([id], `Put "${t.name}" back and liked it again in Spotify`,
+    `Put "${t.name}" back in the ranking, but liking it again in Spotify failed. Like it there, or the next sync will remove it.`);
+  else toast(`Put "${t.name}" back in the ranking`);
+}
+
+/* ---------- duplicates ---------- */
+// Tags that mark another release of the same song, not a different song.
+// Deliberately loose: a false match costs one click on "Not duplicates", a miss is invisible.
+const VERSION_TAG = /\b(re-?master(ed)?|version|mono|stereo|deluxe|bonus|single|edit|explicit|clean|anniversary|expanded|edition|re-?recorded|live|acoustic|demo|original)\b/i;
+const plain = x => x.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function normTitle(name) {
+  let t = name.toLowerCase();
+  t = t.replace(/[(\[]([^)\]]*)[)\]]/g, (m, inner) => VERSION_TAG.test(inner) || /^(feat|ft|with)\b/.test(inner.trim()) ? ' ' : m);
+  t = t.replace(/\s+[-–—]\s+(.*)$/, (m, tail) => VERSION_TAG.test(tail) || /^\d{4}\b/.test(tail.trim()) ? '' : m);
+  t = t.replace(/\b(feat|ft)\.?\s.*$/, '');
+  return plain(t);
+}
+const artistList = a => (a || '').split(/[,;]/).map(x => plain(x.toLowerCase())).filter(Boolean);
+const mainArtist = a => artistList(a)[0] || '';
+
+function findDupes() {
+  const all = list();
+  // union-find over two signals: same ISRC, or same main artist + normalised title
+  const parent = new Map(all.map(s => [s.id, s.id]));
+  const root = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  const join = (x, y) => parent.set(root(x), root(y));
+  const byKey = new Map();
+  for (const s of all) {
+    const keys = ['t:' + mainArtist(s.artists) + '|' + normTitle(s.name)];
+    if (s.isrc) keys.push('i:' + s.isrc.toUpperCase());
+    for (const k of keys) { if (byKey.has(k)) join(s.id, byKey.get(k)); else byKey.set(k, s.id); }
+  }
+  const groups = new Map();
+  for (const s of all) { const r = root(s.id); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(s); }
+  return [...groups.values()]
+    .filter(g => g.length > 1)
+    .map(g => ({ sig: g.map(s => s.id).sort().join(','), songs: g.sort((x, y) => y.games - x.games || (x.released || '').localeCompare(y.released || '')) }))
+    .filter(g => !state.resolved[g.sig])
+    .sort((x, y) => x.songs[0].name.localeCompare(y.songs[0].name));
+}
+
+// Levenshtein similarity in 0..1
+function similarity(a, b) {
+  if (a === b) return 1;
+  const m = a.length, n = b.length;
+  if (!m || !n) return 0;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return 1 - prev[n] / Math.max(m, n);
+}
+
+// Pairs by a shared artist whose titles are close but not equal (exact matches are findDupes' job).
+function findSimilar(exactGroups) {
+  const sameGroup = new Map();
+  for (const g of exactGroups) for (const x of g.songs) sameGroup.set(x.id, g.sig);
+  const byArtist = new Map();
+  for (const x of list()) for (const a of artistList(x.artists)) { if (!byArtist.has(a)) byArtist.set(a, []); byArtist.get(a).push(x); }
+  const pairs = new Map();
+  for (const songs of byArtist.values()) {
+    const titles = songs.map(x => normTitle(x.name));
+    for (let i = 0; i < songs.length; i++) for (let j = i + 1; j < songs.length; j++) {
+      const [ta, tb] = [titles[i], titles[j]];
+      if (ta === tb || !ta || !tb) continue;
+      const [x, y] = [songs[i], songs[j]];
+      if (sameGroup.has(x.id) && sameGroup.get(x.id) === sameGroup.get(y.id)) continue;
+      const short = ta.length < tb.length ? ta : tb, long = short === ta ? tb : ta;
+      // one title starts with the other ("Song" / "Song - Movie Version"), or a near-identical spelling.
+      // Only prefixes count ("Away" inside "Fade Away" is another song), and short titles are never
+      // spelling-matched: one letter apart is a different word there ("Follow" / "Hollow").
+      const contains = short.length >= 4 && long.startsWith(short + ' ');
+      const score = similarity(ta, tb);
+      if (!contains && (score < 0.85 || short.length < 8)) continue;
+      const sig = [x.id, y.id].sort().join(',');
+      if (state.resolved[sig] || pairs.has(sig)) continue;
+      pairs.set(sig, { sig, score: contains ? Math.max(score, 0.85) : score, songs: [x, y].sort((p, q) => q.games - p.games) });
+    }
+  }
+  return [...pairs.values()].sort((p, q) => q.score - p.score || p.songs[0].name.localeCompare(q.songs[0].name));
+}
+
+// Same title by artists with nobody in common: usually covers, sometimes just a shared name.
+// Exact titles only; fuzzy matching across artists is mostly noise.
+function findCovers() {
+  const byTitle = new Map();
+  for (const x of list()) {
+    const t = normTitle(x.name.replace(/\bcover\b/ig, ''));
+    if (!t) continue;
+    if (!byTitle.has(t)) byTitle.set(t, []);
+    byTitle.get(t).push(x);
+  }
+  const groups = [];
+  for (const songs of byTitle.values()) {
+    if (songs.length < 2) continue;
+    const sets = songs.map(x => new Set(artistList(x.artists)));
+    let cross = false;
+    for (let i = 0; i < songs.length && !cross; i++) for (let j = i + 1; j < songs.length; j++) if (![...sets[i]].some(a => sets[j].has(a))) { cross = true; break; }
+    if (!cross) continue;
+    const sig = songs.map(x => x.id).sort().join(',');
+    // the original is usually the older release
+    if (!state.resolved[sig]) groups.push({ sig, songs: songs.sort((x, y) => (x.released || '9').localeCompare(y.released || '9')) });
+  }
+  return groups.sort((x, y) => x.songs[0].name.localeCompare(y.songs[0].name));
+}
+
+function updateDupeCount() { const g = findDupes(); $('dupe-count').textContent = (g.length + findSimilar(g).length + findCovers().length) || ''; }
+
+function groupHTML(g, key, mode = 'merge') {
+  return `
+    <div class="group" data-sig="${escapeAttr(g.sig)}">
+      <h3>${escapeHTML(g.songs[0].name)} <span>${escapeHTML(g.songs[0].artists)}</span></h3>
+      ${g.songs.map((s, i) => `
+        <label class="version" data-id="${escapeAttr(s.id)}">
+          <input type="radio" name="keep-${key}" value="${escapeAttr(s.id)}" ${i === 0 ? 'checked' : ''}>
+          ${s.imgSm ? `<img src="${escapeAttr(s.imgSm)}" alt="" loading="lazy">` : '<img alt="">'}
+          <div class="name">
+            <b>${escapeHTML(s.name)}</b>
+            <span>${escapeHTML(s.artists)} · ${escapeHTML(s.album || 'Unknown album')}${s.released ? ', ' + escapeHTML(s.released.slice(0, 4)) : ''} · <a href="https://open.spotify.com/track/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">Open in Spotify</a></span>
+          </div>
+          <span class="rec" title="Wins–losses–draws">${s.games ? rec(s) : 'No fights yet'}</span>
+          <span class="elo">${Math.round(s.rating)}</span>
+        </label>`).join('')}
+      <div class="row">
+        <button class="btn" data-act="${mode}">Keep selected, remove the rest</button>
+        <button class="btn ghost" data-act="ignore">${mode === 'cover' ? 'Keep all' : 'Not duplicates'}</button>
+      </div>
+    </div>`;
+}
+
+function renderDupes() {
+  const groups = findDupes();
+  const similar = findSimilar(groups);
+  const covers = findCovers();
+  // a "not duplicates" decision reopens when a new version joins the group
+  const open = [...groups, ...similar, ...covers];
+  for (const [sig, r] of Object.entries(state.resolved)) {
+    if (r.type === 'distinct' && open.some(g => r.ids.every(id => g.sig.split(',').includes(id)))) delete state.resolved[sig];
+  }
+  save();
+  updateDupeCount();
+  $('dupes-info').textContent = groups.length
+    ? `${groups.length} songs are in your liked songs more than once. Choose the version to keep. It gains the other versions' wins, losses and draws, and its rating becomes their average, weighted by fights. The other versions go to the Removed songs list in Settings, to unlike in Spotify.`
+    : 'No duplicates found. Songs that share an ISRC, or the same artist and title once tags like "Remastered" or "Live" are ignored, show up here.';
+  $('dupes-list').innerHTML = groups.map((g, i) => groupHTML(g, 'd' + i)).join('')
+    + (similar.length ? `<h2 class="resolved-head">Similar titles <span>${similar.length}</span></h2>
+      <p class="lead">Same artist, titles that are close but not identical. Many of these are different songs, so mark those as not duplicates.</p>`
+      + similar.map((g, i) => groupHTML(g, 's' + i)).join('') : '')
+    + (covers.length ? `<h2 class="resolved-head">Same title, different artist <span>${covers.length}</span></h2>
+      <p class="lead">Usually covers, sometimes different songs that share a name. The oldest release is listed first. Removing a cover doesn't move its wins and losses to the song you keep, because they were fights about a different recording.</p>`
+      + covers.map((g, i) => groupHTML(g, 'c' + i, 'cover')).join('') : '')
+    + renderResolved();
+  // CSV imports have no artwork: fill thumbnails for the first groups
+  [...$('dupes-list').querySelectorAll('.version')].slice(0, 250).forEach(row => {
+    const id = row.dataset.id;
+    const s = state.tracks[id] || state.removed[id];
+    if (s && !s.imgSm) fetchCover(s).then(url => { if (url) row.querySelector('img').src = url; });
+  });
+}
+
+function renderResolved() {
+  const done = Object.entries(state.resolved).sort((x, y) => (y[1].at || '').localeCompare(x[1].at || ''));
+  if (!done.length) return '';
+  const status = (r, id) => {
+    if (r.type === 'distinct') return 'Kept separately';
+    if (id === r.keepId) return 'Kept';
+    const gone = state.removed[id];
+    if (!gone) return 'Back in ranking';
+    return gone.unliked ? 'Removed, unliked in Spotify' : 'Removed, still liked in Spotify';
+  };
+  return `<h2 class="resolved-head">Resolved <span>${done.length}</span></h2>` + done.map(([sig, r]) => {
+    const songs = r.ids.map(id => state.tracks[id] || state.removed[id]).filter(Boolean);
+    if (!songs.length) return '';
+    const head = songs.find(x => x.id === r.keepId) || songs[0];
+    return `
+    <div class="group resolved" data-sig="${escapeAttr(sig)}">
+      <h3>${escapeHTML(head.name)} <span>${escapeHTML(head.artists)}</span></h3>
+      <p class="verdict">${{ distinct: 'Kept all versions', merged: 'Merged into one song', removed: 'Removed the other versions without combining their stats' }[r.type]}</p>
+      ${songs.map(x => `
+        <div class="version" data-id="${escapeAttr(x.id)}">
+          <span class="tag${x.id === r.keepId || r.type === 'distinct' ? ' kept' : ''}">${status(r, x.id)}</span>
+          ${x.imgSm ? `<img src="${escapeAttr(x.imgSm)}" alt="" loading="lazy">` : '<img alt="">'}
+          <div class="name">
+            <b>${escapeHTML(x.name)}</b>
+            <span>${escapeHTML(x.album || 'Unknown album')}${x.released ? ', ' + escapeHTML(x.released.slice(0, 4)) : ''} · <a href="https://open.spotify.com/track/${encodeURIComponent(x.id)}" target="_blank" rel="noopener">Open in Spotify</a></span>
+          </div>
+          <span class="rec" title="Wins–losses–draws">${x.games ? rec(x) : 'No fights yet'}</span>
+          <span class="elo">${Math.round(x.rating)}</span>
+        </div>`).join('')}
+      <div class="row"><button class="btn ghost" data-act="unresolve">Unresolve</button></div>
+    </div>`;
+  }).join('');
+}
+
+function unresolve(sig) {
+  const r = state.resolved[sig];
+  delete state.resolved[sig];
+  const relikeIds = [];
+  if (r.type === 'merged') {
+    const keep = state.tracks[r.keepId];
+    for (const id of r.removedIds) {
+      const gone = state.removed[id];
+      if (!gone || gone.mergedInto !== r.keepId) continue; // already put back from Settings
+      const { removedAt, unliked, mergedInto, ...t } = gone;
+      if (keep) for (const k of ['wins', 'losses', 'draws', 'games']) keep[k] = Math.max(0, keep[k] - t[k]);
+      if (unliked) relikeIds.push(id);
+      delete state.removed[id];
+      state.tracks[id] = t;
+    }
+    // undo the merge's rating change but keep whatever the song gained or lost in fights since
+    if (keep) keep.rating -= r.ratingShift || 0;
+  }
+  if (r.type === 'removed') {
+    for (const id of r.removedIds) {
+      const gone = state.removed[id];
+      if (!gone || gone.mergedInto) continue; // already put back, or merged elsewhere since
+      const { removedAt, unliked, mergedInto, ...t } = gone;
+      if (unliked) relikeIds.push(id);
+      delete state.removed[id];
+      state.tracks[id] = t;
+    }
+  }
+  save();
+  renderDupes();
+  const n = relikeIds.length;
+  relike(relikeIds, n ? `Unresolved, and liked ${n} version${n > 1 ? 's' : ''} again in Spotify` : 'Unresolved. The group is open again.',
+    `Unresolved, but liking ${n > 1 ? 'them' : 'it'} again in Spotify failed. Like ${n > 1 ? 'them' : 'it'} there, or the next sync will remove ${n > 1 ? 'them' : 'it'}.`);
+}
+
+async function mergeDupes(sig, keepId, removeIds) {
+  const keep = state.tracks[keepId];
+  const ratingBefore = keep.rating;
+  const gone = removeIds.map(id => state.tracks[id]).filter(Boolean);
+  const games = keep.games + gone.reduce((n, s) => n + s.games, 0);
+  // fight-weighted average: a version with no fights doesn't drag the rating toward 1500
+  if (games > 0) keep.rating = (keep.rating * keep.games + gone.reduce((n, s) => n + s.rating * s.games, 0)) / games;
+  for (const s of gone) {
+    keep.wins += s.wins; keep.losses += s.losses; keep.draws += s.draws; keep.games += s.games;
+    state.removed[s.id] = { ...s, removedAt: new Date().toISOString(), unliked: false, mergedInto: keepId };
+    delete state.tracks[s.id];
+  }
+  state.resolved[sig] = { type: 'merged', ids: sig.split(','), keepId, removedIds: gone.map(s => s.id), ratingShift: keep.rating - ratingBefore, at: new Date().toISOString() };
+  if (current && current.some(id => !state.tracks[id])) current = null;
+  save();
+  if (await accessToken()) { try { await unlikeInSpotify(gone.map(s => s.id)); return true; } catch {} }
+  return false;
+}
+
+async function removeVersions(sig, keepId, removeIds) {
+  const gone = removeIds.map(id => state.tracks[id]).filter(Boolean);
+  for (const x of gone) {
+    state.removed[x.id] = { ...x, removedAt: new Date().toISOString(), unliked: false };
+    delete state.tracks[x.id];
+  }
+  state.resolved[sig] = { type: 'removed', ids: sig.split(','), keepId, removedIds: gone.map(x => x.id), at: new Date().toISOString() };
+  if (current && current.some(id => !state.tracks[id])) current = null;
+  save();
+  if (await accessToken()) { try { await unlikeInSpotify(gone.map(x => x.id)); return true; } catch {} }
+  return false;
+}
+
+function skip() { if (busy) return; current = nextPair(); renderFight(); }
+
+function ranked() { return list().sort((x, y) => y.rating - x.rating); }
+
+function renderBoard() {
+  const q = $('search').value.trim().toLowerCase();
+  const rows = ranked().map((s, i) => ({ s, pos: i + 1 }))
+    .filter(({ s }) => !q || (s.name + ' ' + s.artists).toLowerCase().includes(q));
+  $('board').innerHTML = rows.length ? rows.map(({ s, pos }) => `
+    <li class="${pos <= 10 ? 'top' : ''} ${s.games < 3 ? 'new' : ''}">
+      <span class="pos">${pos}</span>
+      ${s.imgSm ? `<img src="${escapeAttr(s.imgSm)}" alt="" loading="lazy">` : '<img alt="">'}
+      <div class="name">
+        <a href="https://open.spotify.com/track/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">${escapeHTML(s.name)}</a>
+        <span>${escapeHTML(s.artists)}</span>
+      </div>
+      <span class="rec" title="Wins–losses–draws">${s.games ? rec(s) : 'No fights yet'}</span>
+      <span class="elo" title="${s.games < 3 ? 'Fewer than 3 fights, so this rating is provisional' : 'Elo rating'}">${Math.round(s.rating)}</span>
+    </li>`).join('') : `<li class="empty">No songs match "${escapeHTML(q)}".</li>`;
+  // fill in missing thumbnails for the first rows shown (CSV imports have no artwork)
+  rows.slice(0, 60).forEach(({ s }, i) => {
+    if (s.imgSm) return;
+    fetchCover(s).then(url => { const img = $('board').children[i]?.querySelector('img'); if (url && img) img.src = url; });
+  });
+}
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const csvCell = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+function exportCSV() {
+  const lines = [['Rank', 'Track Name', 'Artist Name(s)', 'Album Name', 'Rating', 'Wins', 'Losses', 'Draws', 'Track URI']];
+  ranked().forEach((s, i) => lines.push([i + 1, s.name, s.artists, s.album, Math.round(s.rating), s.wins, s.losses, s.draws, 'spotify:track:' + s.id]));
+  download('song-rankings.csv', lines.map(l => l.map(csvCell).join(',')).join('\n'), 'text/csv');
+}
+
+const escapeHTML = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escapeAttr = escapeHTML;
+
+async function readCSVFile(input, statusId) {
+  const f = input.files[0]; input.value = '';
+  if (!f) return;
+  try {
+    const r = importCSV(await f.text());
+    toast(`Imported: ${r.added} new songs, ${r.total} total`);
+    current = null; show('fight');
+  } catch (e) { statusId ? setStatus(statusId, e.message) : toast(e.message); }
+}
+
+async function runSync(statusId) {
+  try {
+    const r = await syncLiked(statusId);
+    setStatus(statusId, `Done. ${r.added} added, ${r.removed} removed, ${r.total} songs total.`);
+    return true;
+  } catch (e) {
+    if (e.message === 'NOAUTH') { login(); return false; }
+    setStatus(statusId, e.message);
+    return false;
+  }
+}
+
+/* ---------- wiring ---------- */
+$('redirect-uri').textContent = REDIRECT;
+$('client-id').value = LS.get('sfn.clientId', '');
+$('connect').onclick = login;
+$('csv-file').onchange = e => readCSVFile(e.target, 'setup-status');
+$('csv-file-2').onchange = e => readCSVFile(e.target, null);
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.view));
+document.querySelectorAll('.pick').forEach(b => b.onclick = () => decide(b.dataset.side === 'a' ? 1 : 0));
+$('draw').onclick = () => decide(0.5);
+document.querySelectorAll('.remove').forEach(b => b.onclick = () => removeSong(b.dataset.side));
+$('dupes-list').onclick = async e => {
+  const act = e.target.dataset?.act;
+  if (!act) return;
+  const g = e.target.closest('.group');
+  if (act === 'unresolve') { unresolve(g.dataset.sig); return; }
+  if (act === 'ignore') {
+    state.resolved[g.dataset.sig] = { type: 'distinct', ids: g.dataset.sig.split(','), at: new Date().toISOString() }; save();
+    toast('Kept all versions');
+  } else if (act === 'cover') {
+    const keepId = g.querySelector('input:checked').value;
+    const others = g.dataset.sig.split(',').filter(id => id !== keepId);
+    const unliked = await removeVersions(g.dataset.sig, keepId, others);
+    const n = others.length;
+    toast(unliked ? `Removed ${n} version${n > 1 ? 's' : ''} and unliked ${n > 1 ? 'them' : 'it'} in Spotify`
+      : `Removed ${n} version${n > 1 ? 's' : ''}. ${n > 1 ? 'They are' : "It's"} in Settings, ready to unlike.`);
+  } else {
+    const keepId = g.querySelector('input:checked').value;
+    const others = g.dataset.sig.split(',').filter(id => id !== keepId);
+    const name = state.tracks[keepId].name;
+    const unliked = await mergeDupes(g.dataset.sig, keepId, others);
+    toast(unliked ? `Kept one "${name}" and unliked the other ${others.length} in Spotify`
+      : `Kept one "${name}". ${others.length === 1 ? 'The other version is' : `The other ${others.length} are`} in Settings, ready to unlike.`);
+  }
+  renderDupes();
+};
+$('removed-list').onclick = e => { const id = e.target.dataset?.restore; if (id) restoreSong(id); };
+$('unlike-all').onclick = async () => {
+  const ids = Object.values(state.removed).filter(r => !r.unliked).map(r => r.id);
+  $('unlike-all').disabled = true;
+  try { const n = await unlikeInSpotify(ids); setStatus('removed-status', `Unliked ${n} songs in Spotify.`); }
+  catch (e) { if (e.message === 'NOAUTH') { login(); return; } setStatus('removed-status', e.message); }
+  renderRemoved();
+};
+$('skip').onclick = skip;
+$('undo').onclick = undo;
+$('sound').onclick = () => setSound(!soundOn);
+setSound(soundOn);
+$('search').oninput = renderBoard;
+$('export').onclick = exportCSV;
+$('client-id-2').oninput = e => {
+  const id = e.target.value.trim();
+  if (id !== LS.get('sfn.clientId', '')) LS.del('sfn.token'); // a token belongs to one app
+  LS.set('sfn.clientId', id);
+  $('client-id').value = id;
+  $('sync').disabled = !id;
+  renderRemoved();
+};
+$('sync').onclick = async () => { $('sync').disabled = true; await runSync('sync-status'); $('sync').disabled = false; current = null; };
+$('backup').onclick = () => download('song-fight-backup.json', JSON.stringify(state), 'application/json');
+$('restore').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const s = JSON.parse(await f.text());
+    if (!s || typeof s.tracks !== 'object') throw 0;
+    state = migrate({ tracks: s.tracks, fights: s.fights || 0, history: s.history || [], removed: s.removed, resolved: s.resolved, notDupes: s.notDupes });
+    save(); current = null; toast('Backup restored'); show('ranks');
+  } catch { toast('That file is not a Song Fight Night backup'); }
+};
+$('reset').onclick = () => {
+  if (!confirm('Reset every rating to 1500 and clear fight history?')) return;
+  for (const s of list()) Object.assign(s, { rating: START, games: 0, wins: 0, losses: 0, draws: 0 });
+  state.fights = 0; state.history = []; save(); current = null; toast('Ratings reset'); show('fight');
+};
+$('wipe').onclick = () => {
+  if (!confirm('Remove all songs, ratings and your Spotify login from this browser?')) return;
+  state = { tracks: {}, fights: 0, history: [], removed: {}, resolved: {} }; save(); LS.del('sfn.token'); current = null; show('fight');
+};
+
+document.addEventListener('keydown', e => {
+  if (view !== 'fight' || $('view-fight').classList.contains('hidden')) return;
+  if (e.target.closest?.('input') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'arrowleft' || k === 'a') { e.preventDefault(); decide(1); }
+  else if (k === 'arrowright' || k === 'd') { e.preventDefault(); decide(0); }
+  else if (k === 'arrowdown' || k === 's') { e.preventDefault(); decide(0.5); }
+  else if (k === 'arrowup' || k === 'w') { e.preventDefault(); skip(); }
+  else if (k === 'z' || k === 'backspace') { e.preventDefault(); undo(); }
+  else if (k === 'm') { e.preventDefault(); setSound(!soundOn); toast(soundOn ? 'Sound on' : 'Sound off'); }
+});
+
+/* ---------- boot ---------- */
+(async () => {
+  let justLoggedIn = false;
+  try { justLoggedIn = await handleRedirect(); }
+  catch (e) { setStatus('setup-status', 'Login failed: ' + e.message); }
+  show('fight');
+  if (justLoggedIn) {
+    setStatus('setup-status', 'Connected. Loading your liked songs…');
+    const target = list().length >= 2 ? 'sync-status' : 'setup-status';
+    if (list().length >= 2) show('settings');
+    if (await runSync(target)) { current = null; show('fight'); toast(`${list().length} songs ready to fight`); }
+  }
+})();
+</script>
+</body>
+</html>
