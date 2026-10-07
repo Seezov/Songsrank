@@ -114,6 +114,7 @@ input[type=text], input[type=search] {
 .board.removed a.open { color: var(--muted); font-size: 14px; white-space: nowrap; }
 .board.removed .done { color: var(--muted); font-size: 14px; }
 .key { font-size: 13px; color: var(--muted); }
+.full { display: none; padding: 8px 14px; font-size: 14px; white-space: nowrap; }
 .key kbd {
   font: 600 12px var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--text);
 }
@@ -254,6 +255,8 @@ ol.board { list-style: none; margin: 0; padding: 0; }
 /* touch screens: keyboard hints are noise */
 @media (hover: none) {
   .key { display: none; }
+  /* mobile browsers only get 30 s previews from the embed; this hands playback to the Spotify app */
+  .full { display: inline-block; margin-left: auto; }
   .corner:hover { border-color: transparent; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -322,7 +325,7 @@ ol.board { list-style: none; margin: 0; padding: 0; }
         </button>
         <div class="meta"><span>Rating <b class="r"></b></span><span class="rec"></span></div>
         <div class="player"></div>
-        <div class="foot"><span class="key"><kbd>←</kbd> or <kbd>A</kbd> to pick</span><button class="remove" data-side="a">Remove from liked</button></div>
+        <div class="foot"><span class="key"><kbd>←</kbd> or <kbd>A</kbd> to pick</span><button class="remove" data-side="a">Remove from liked</button><button class="btn ghost full" data-side="a">▶ Full song</button></div>
         <div class="delta"></div>
       </article>
 
@@ -342,7 +345,7 @@ ol.board { list-style: none; margin: 0; padding: 0; }
         </button>
         <div class="meta"><span>Rating <b class="r"></b></span><span class="rec"></span></div>
         <div class="player"></div>
-        <div class="foot"><span class="key"><kbd>→</kbd> or <kbd>D</kbd> to pick</span><button class="remove" data-side="b">Remove from liked</button></div>
+        <div class="foot"><span class="key"><kbd>→</kbd> or <kbd>D</kbd> to pick</span><button class="remove" data-side="b">Remove from liked</button><button class="btn ghost full" data-side="b">▶ Full song</button></div>
         <div class="delta"></div>
       </article>
     </div>
@@ -465,7 +468,9 @@ const list = () => Object.values(state.tracks);
    Spotify auth (PKCE)
    ========================================================= */
 const REDIRECT = location.origin + location.pathname;
-const SCOPES = 'user-library-read user-library-modify';
+const SCOPES = 'user-library-read user-library-modify user-read-playback-state user-modify-playback-state';
+// public PKCE app id of this site; anyone can still paste their own in Settings
+const DEFAULT_CLIENT_ID = '0dabb1123f6f443293cfe26b0424c7ab';
 
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 function randomString(n = 64) {
@@ -474,8 +479,8 @@ function randomString(n = 64) {
   return Array.from(a, x => chars[x % chars.length]).join('');
 }
 
-async function login() {
-  const clientId = document.getElementById('client-id').value.trim() || LS.get('sfn.clientId', '');
+async function login(purpose = 'sync') {
+  const clientId = document.getElementById('client-id').value.trim() || LS.get('sfn.clientId', '') || DEFAULT_CLIENT_ID;
   if (!clientId) { setStatus('setup-status', 'Paste your Client ID first.'); return; }
   LS.set('sfn.clientId', clientId);
   const verifier = randomString(64);
@@ -483,6 +488,7 @@ async function login() {
   const st = randomString(16);
   sessionStorage.setItem('sfn.verifier', verifier);
   sessionStorage.setItem('sfn.oauthState', st);
+  sessionStorage.setItem('sfn.loginFor', purpose);
   const p = new URLSearchParams({
     client_id: clientId, response_type: 'code', redirect_uri: REDIRECT, scope: SCOPES,
     code_challenge_method: 'S256', code_challenge: challenge, state: st,
@@ -500,6 +506,7 @@ async function tokenRequest(body) {
     access: j.access_token,
     refresh: j.refresh_token || LS.get('sfn.token', {}).refresh,
     exp: Date.now() + (j.expires_in - 60) * 1000,
+    scope: j.scope || LS.get('sfn.token', {}).scope || '',
   });
 }
 
@@ -877,6 +884,46 @@ async function relike(ids, okMsg, failMsg) {
     await libraryRequest('PUT', ids);
     toast(okMsg);
   } catch { toast(failMsg); }
+}
+
+/* ---------- full-song playback ---------- */
+// Mobile browsers get 30-second previews from the embed no matter what, so play the
+// whole song in the listener's Spotify app instead (needs Premium), via Spotify Connect.
+const PLAY_SCOPE = 'user-modify-playback-state';
+const openInApp = id => window.open('https://open.spotify.com/track/' + encodeURIComponent(id), '_blank', 'noopener');
+
+async function player(method, path, body) {
+  const tok = await accessToken();
+  if (!tok) throw new Error('NOAUTH');
+  const r = await fetch('https://api.spotify.com/v1/me/player' + path, {
+    method, headers: { Authorization: 'Bearer ' + tok, ...(body && { 'Content-Type': 'application/json' }) },
+    body: body && JSON.stringify(body),
+  });
+  if (r.status === 401) throw new Error('NOAUTH');
+  return r;
+}
+
+async function playFull(side) {
+  if (!current) return;
+  const id = current[side === 'a' ? 0 : 1];
+  const t = LS.get('sfn.token', null);
+  if (!t || !(t.scope || '').split(' ').includes(PLAY_SCOPE)) { login('play'); return; }
+  try {
+    const body = { uris: ['spotify:track:' + id] };
+    let r = await player('PUT', '/play', body);
+    if (r.status === 404) {
+      // no active device: wake the most likely one (this phone's Spotify app, if it's been opened lately)
+      const { devices = [] } = await (await player('GET', '/devices')).json();
+      const d = devices.find(x => x.type === 'Smartphone') || devices[0];
+      if (d) r = await player('PUT', '/play?device_id=' + encodeURIComponent(d.id), body);
+    }
+    if (r.ok) { toast('Playing in Spotify'); return; }
+    if (r.status === 403) { toast('Spotify only lets Premium accounts start playback'); return; }
+    openInApp(id); // no device to play on: open the song in the app
+  } catch (e) {
+    if (e.message === 'NOAUTH') { login('play'); return; }
+    openInApp(id);
+  }
 }
 
 async function removeSong(side) {
@@ -1260,7 +1307,7 @@ async function runSync(statusId) {
 /* ---------- wiring ---------- */
 $('redirect-uri').textContent = REDIRECT;
 $('client-id').value = LS.get('sfn.clientId', '');
-$('connect').onclick = login;
+$('connect').onclick = () => login();
 $('csv-file').onchange = e => readCSVFile(e.target, 'setup-status');
 $('csv-file-2').onchange = e => readCSVFile(e.target, null);
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.view));
@@ -1301,6 +1348,7 @@ $('unlike-all').onclick = async () => {
   renderRemoved();
 };
 $('skip').onclick = skip;
+document.querySelectorAll('.full').forEach(b => b.onclick = () => playFull(b.dataset.side));
 $('undo').onclick = undo;
 $('sound').onclick = () => setSound(!soundOn);
 setSound(soundOn);
@@ -1354,6 +1402,8 @@ document.addEventListener('keydown', e => {
   try { justLoggedIn = await handleRedirect(); }
   catch (e) { setStatus('setup-status', 'Login failed: ' + e.message); }
   show('fight');
+  const loginFor = sessionStorage.getItem('sfn.loginFor'); sessionStorage.removeItem('sfn.loginFor');
+  if (justLoggedIn && loginFor === 'play') { toast('Spotify connected. Tap Full song again to play.'); return; }
   if (justLoggedIn) {
     setStatus('setup-status', 'Connected. Loading your liked songs…');
     const target = list().length >= 2 ? 'sync-status' : 'setup-status';
